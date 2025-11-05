@@ -76,5 +76,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("no.nav.emottak.AppKt")
+    mainClass.set("no.nav.emottak.state.AppKt")
 }
