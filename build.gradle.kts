@@ -1,3 +1,4 @@
+import org.gradle.api.file.DuplicatesStrategy.INCLUDE
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -6,11 +7,13 @@ plugins {
     kotlin("plugin.serialization") version "2.1.10"
     id("io.ktor.plugin") version "3.0.3"
     id("org.jlleitschuh.gradle.ktlint") version "11.6.1"
-    id("com.gradleup.shadow") version "8.3.6"
+    id("com.gradleup.shadow") version "9.2.2"
 }
 
 tasks {
     shadowJar {
+        mergeServiceFiles()
+        duplicatesStrategy = INCLUDE
         archiveFileName.set("app.jar")
     }
     test {
