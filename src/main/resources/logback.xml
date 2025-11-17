@@ -15,6 +15,7 @@
 
     <logger name="no.nav" level="DEBUG"/>
     <logger name="io.ktor" level="INFO"/>
+    <logger name="com.zaxxer.hikari.pool" level="INFO" />
 
     <root level="INFO">
         <appender-ref ref="stdout_json"/>

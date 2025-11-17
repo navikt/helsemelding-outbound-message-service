@@ -19,6 +19,10 @@ dependencyResolutionManagement {
             version("kotlin-logging", "7.0.3")
             version("token-validation-ktor", "5.0.15")
             version("eclipse-angus", "2.0.2")
+            version("exposed", "1.0.0-rc-3")
+            version("flyway", "11.8.0")
+            version("postgresql", "42.7.5")
+            version("hikari", "6.3.0")
             version("hoplite", "2.8.2")
             version("prometheus", "1.12.4")
             version("logback", "1.4.11")
@@ -52,6 +56,13 @@ dependencyResolutionManagement {
             library("ktor-server-metrics-micrometer", "io.ktor", "ktor-server-metrics-micrometer").versionRef("ktor")
             library("micrometer-registry-prometheus", "io.micrometer", "micrometer-registry-prometheus").versionRef("prometheus")
 
+            library("exposed-jdbc", "org.jetbrains.exposed", "exposed-jdbc").versionRef("exposed")
+            library("exposed-datetime", "org.jetbrains.exposed", "exposed-kotlin-datetime").versionRef("exposed")
+
+            library("hikari", "com.zaxxer", "HikariCP").versionRef("hikari")
+            library("flyway-postgresql", "org.flywaydb", "flyway-database-postgresql").versionRef("flyway")
+            library("postgresql", "org.postgresql", "postgresql").versionRef("postgresql")
+
             library("kotlin-logging", "io.github.oshai", "kotlin-logging-jvm").versionRef("kotlin-logging")
             library("logback-classic", "ch.qos.logback", "logback-classic").versionRef("logback")
             library("logback-logstash", "net.logstash.logback", "logstash-logback-encoder").versionRef("logstash")
@@ -70,14 +81,11 @@ dependencyResolutionManagement {
             version("ktor", "3.0.3")
             version("ktor-server-test", "3.0.3")
             version("kotest", "5.9.1")
-            version("mock-oauth2", "2.1.2")
             version("testcontainers", "1.18.1")
             version("kotest-extensions", "2.0.2")
-            version("turbine", "1.2.0")
 
             library("ktor-server-test-host", "io.ktor", "ktor-server-test-host").versionRef("ktor-server-test")
             library("ktor-client-mock", "io.ktor", "ktor-client-mock").versionRef("ktor")
-            library("mock-oauth2-server", "no.nav.security", "mock-oauth2-server").versionRef("mock-oauth2")
 
             library("kotest-runner-junit5", "io.kotest", "kotest-runner-junit5").versionRef("kotest")
             library("kotest-framework-datatest", "io.kotest", "kotest-framework-datatest").versionRef("kotest")
@@ -89,8 +97,6 @@ dependencyResolutionManagement {
 
             library("testcontainers", "org.testcontainers", "testcontainers").versionRef("testcontainers")
             library("testcontainers-postgresql", "org.testcontainers", "postgresql").versionRef("testcontainers")
-
-            library("turbine", "app.cash.turbine", "turbine").versionRef("turbine")
 
             bundle("kotest", listOf("kotest-runner-junit5", "kotest-framework-datatest"))
         }

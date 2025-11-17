@@ -29,10 +29,10 @@ tasks {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().all {
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_21
-        freeCompilerArgs = listOf(
-            "-opt-in=kotlin.uuid.ExperimentalUuidApi,arrow.fx.coroutines.await.ExperimentalAwaitAllApi"
-        )
+        jvmTarget.set(JvmTarget.JVM_21)
+        freeCompilerArgs.add("-opt-in=kotlin.time.ExperimentalTime")
+        freeCompilerArgs.add("-opt-in=kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.add("-opt-in=arrow.fx.coroutines.await.ExperimentalAwaitAllApi")
     }
 }
 
@@ -60,6 +60,11 @@ dependencies {
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.kotlin.logging)
+    implementation(libs.exposed.jdbc)
+    implementation(libs.exposed.datetime)
+    implementation(libs.hikari)
+    implementation(libs.flyway.postgresql)
+    implementation(libs.postgresql)
     implementation(libs.token.validation.ktor.v3)
     implementation(libs.emottak.utils)
     testImplementation(testLibs.bundles.kotest)
@@ -68,10 +73,8 @@ dependencies {
     testImplementation(testLibs.kotest.extensions.testcontainers)
     testImplementation(testLibs.ktor.server.test.host)
     testImplementation(testLibs.ktor.client.mock)
-    testImplementation(testLibs.mock.oauth2.server)
     testImplementation(testLibs.testcontainers)
     testImplementation(testLibs.testcontainers.postgresql)
-    testImplementation(testLibs.turbine)
     testImplementation(kotlin("test"))
 }
 

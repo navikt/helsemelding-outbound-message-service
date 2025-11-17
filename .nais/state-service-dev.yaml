@@ -14,6 +14,13 @@ spec:
     application:
       enabled: true
       allowAllUsers: true
+  gcp:
+    sqlInstances:
+      - type: POSTGRES_17
+        tier: db-f1-micro
+        databases:
+          - name: emottak-statedb
+            envVarPrefix: POSTGRES
   webproxy: true
   image: {{image}}
   liveness:
