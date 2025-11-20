@@ -8,9 +8,9 @@ import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.types.shouldBeInstanceOf
 import no.nav.emottak.state.container
 import no.nav.emottak.state.database
-import no.nav.emottak.state.model.MessageDeliveryState.COMPLETED
-import no.nav.emottak.state.model.MessageDeliveryState.NEW
-import no.nav.emottak.state.model.MessageDeliveryState.PROCESSED
+import no.nav.emottak.state.model.AppRecStatus.Ok
+import no.nav.emottak.state.model.ExternalDeliveryState.Acknowledged
+import no.nav.emottak.state.model.ExternalDeliveryState.Unconfirmed
 import no.nav.emottak.state.model.MessageType.DIALOG
 import org.jetbrains.exposed.v1.exceptions.ExposedSQLException
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
@@ -24,6 +24,7 @@ private const val MESSAGE = "http://exmaple.com/messages/1"
 
 class MessageStateHistoryRepositorySpec : StringSpec(
     {
+
         lateinit var container: PostgreSQLContainer<Nothing>
 
         beforeEach {
@@ -31,19 +32,21 @@ class MessageStateHistoryRepositorySpec : StringSpec(
             container.start()
         }
 
-        "Append message state history - no message reference" {
+        "Append history – fails when messageId does not exist" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
                 suspendTransaction(database) {
-                    val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
+                    val repo = ExposedMessageStateHistoryRepository(database)
 
                     val exception = shouldThrow<ExposedSQLException> {
-                        messageStateHistoryRepository.append(
-                            Uuid.random(),
-                            null,
-                            PROCESSED,
-                            Clock.System.now()
+                        repo.append(
+                            messageId = Uuid.random(),
+                            oldDeliveryState = null,
+                            newDeliveryState = Acknowledged,
+                            oldAppRecStatus = null,
+                            newAppRecStatus = null,
+                            changedAt = Clock.System.now()
                         )
                     }
 
@@ -53,156 +56,145 @@ class MessageStateHistoryRepositorySpec : StringSpec(
             }
         }
 
-        "Append message state history - empty history" {
+        "Append history – first entry" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
                 suspendTransaction(database) {
-                    val messageStateRepository = ExposedMessageRepository(database)
-                    val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
+                    val messageRepo = ExposedMessageRepository(database)
+                    val historyRepo = ExposedMessageStateHistoryRepository(database)
 
-                    val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE).toURL()
-                    val state = NEW
-                    val stateChanged = Clock.System.now()
+                    val refId = Uuid.random()
+                    val url = URI.create(MESSAGE).toURL()
+                    val occurredAt = Clock.System.now()
 
-                    messageStateRepository.createState(
-                        DIALOG,
-                        state,
-                        externalRefId,
-                        externalMessageUrl,
-                        stateChanged
+                    messageRepo.create(
+                        messageType = DIALOG,
+                        externalRefId = refId,
+                        externalMessageUrl = url,
+                        lastStateChange = occurredAt
                     )
 
-                    val messageStateChanges = messageStateHistoryRepository.append(
-                        externalRefId,
-                        null,
-                        state,
-                        stateChanged
+                    val history = historyRepo.append(
+                        messageId = refId,
+                        oldDeliveryState = null,
+                        newDeliveryState = Unconfirmed,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = occurredAt
                     )
 
-                    messageStateChanges.size shouldBe 1
-                    val messageStateChange = messageStateChanges.first()
+                    history.size shouldBe 1
+                    val entry = history.first()
 
-                    messageStateChange.messageId shouldBe externalRefId
-                    messageStateChange.oldState shouldBe null
-                    messageStateChange.newState shouldBe state
+                    entry.messageId shouldBe refId
+                    entry.oldDeliveryState shouldBe null
+                    entry.newDeliveryState shouldBe Unconfirmed
+                    entry.oldAppRecStatus shouldBe null
+                    entry.newAppRecStatus shouldBe null
                 }
             }
         }
 
-        "Append message state history - existing history" {
+        "Append history – subsequent entries" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
                 suspendTransaction(database) {
-                    val messageStateRepository = ExposedMessageRepository(database)
-                    val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
+                    val messageRepo = ExposedMessageRepository(database)
+                    val historyRepo = ExposedMessageStateHistoryRepository(database)
 
-                    val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE).toURL()
-                    val state = NEW
-                    val stateChanged = Clock.System.now()
+                    val refId = Uuid.random()
+                    val url = URI.create(MESSAGE).toURL()
+                    val now = Clock.System.now()
 
-                    messageStateRepository.createState(
-                        DIALOG,
-                        state,
-                        externalRefId,
-                        externalMessageUrl,
-                        stateChanged
+                    messageRepo.create(DIALOG, refId, url, now)
+
+                    historyRepo.append(
+                        messageId = refId,
+                        oldDeliveryState = null,
+                        newDeliveryState = Unconfirmed,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = now
                     )
 
-                    messageStateHistoryRepository.append(
-                        externalRefId,
-                        null,
-                        state,
-                        stateChanged
+                    val next = Clock.System.now()
+                    val history = historyRepo.append(
+                        messageId = refId,
+                        oldDeliveryState = Unconfirmed,
+                        newDeliveryState = Acknowledged,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = next
                     )
 
-                    val messageStateChanges = messageStateHistoryRepository.append(
-                        externalRefId,
-                        NEW,
-                        PROCESSED,
-                        Clock.System.now()
-                    )
+                    history.size shouldBe 2
 
-                    messageStateChanges.size shouldBe 2
-
-                    val messageStateChange = messageStateChanges.last()
-
-                    messageStateChange.messageId shouldBe externalRefId
-                    messageStateChange.oldState shouldBe NEW
-                    messageStateChange.newState shouldBe PROCESSED
+                    val last = history.last()
+                    last.messageId shouldBe refId
+                    last.oldDeliveryState shouldBe Unconfirmed
+                    last.newDeliveryState shouldBe Acknowledged
+                    last.oldAppRecStatus shouldBe null
+                    last.newAppRecStatus shouldBe null
                 }
             }
         }
 
-        "Find all state changes - empty history" {
+        "Find all – empty" {
             resourceScope {
                 val database = database(container.jdbcUrl)
-                val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
+                val historyRepo = ExposedMessageStateHistoryRepository(database)
 
-                val id = Uuid.random()
-                val messageStateChanges = messageStateHistoryRepository.findAll(id)
-
-                messageStateChanges.size shouldBe 0
+                val list = historyRepo.findAll(Uuid.random())
+                list shouldBe emptyList()
             }
         }
 
-        "Find all state changes - history exists" {
+        "Find all – returns full history list" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
                 suspendTransaction(database) {
-                    val messageStateRepository = ExposedMessageRepository(database)
+                    val messageRepository = ExposedMessageRepository(database)
                     val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
 
-                    val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE).toURL()
-                    val first = messageStateRepository.createState(
-                        DIALOG,
-                        NEW,
-                        externalRefId,
-                        externalMessageUrl,
-                        Clock.System.now()
-                    )
+                    val refId = Uuid.random()
+                    val url = URI.create(MESSAGE).toURL()
+                    val now = Clock.System.now()
+
+                    messageRepository.create(DIALOG, refId, url, now)
 
                     messageStateHistoryRepository.append(
-                        externalRefId,
-                        null,
-                        first.currentState,
-                        first.lastStateChange
+                        refId,
+                        oldDeliveryState = null,
+                        newDeliveryState = Unconfirmed,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = now
                     )
 
-                    val second = messageStateRepository.updateState(
-                        DIALOG,
-                        PROCESSED,
-                        externalRefId,
-                        Clock.System.now()
-                    )
-
+                    val t2 = Clock.System.now()
                     messageStateHistoryRepository.append(
-                        externalRefId,
-                        PROCESSED,
-                        second.currentState,
-                        second.lastStateChange
+                        refId,
+                        oldDeliveryState = Unconfirmed,
+                        newDeliveryState = Acknowledged,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = t2
                     )
 
-                    val third = messageStateRepository.updateState(
-                        DIALOG,
-                        COMPLETED,
-                        externalRefId,
-                        Clock.System.now()
-                    )
-
+                    val t3 = Clock.System.now()
                     messageStateHistoryRepository.append(
-                        externalRefId,
-                        PROCESSED,
-                        third.currentState,
-                        third.lastStateChange
+                        messageId = refId,
+                        oldDeliveryState = Acknowledged,
+                        newDeliveryState = Acknowledged,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = Ok,
+                        changedAt = t3
                     )
 
-                    messageStateHistoryRepository.findAll(externalRefId).size shouldBe 3
+                    messageStateHistoryRepository.findAll(refId).size shouldBe 3
                 }
             }
         }

@@ -6,7 +6,9 @@ import kotlin.uuid.Uuid
 data class MessageStateChange(
     val id: Uuid,
     val messageId: Uuid,
-    val oldState: MessageDeliveryState?,
-    val newState: MessageDeliveryState,
+    val oldDeliveryState: ExternalDeliveryState?,
+    val newDeliveryState: ExternalDeliveryState?,
+    val oldAppRecStatus: AppRecStatus?,
+    val newAppRecStatus: AppRecStatus?,
     val changedAt: Instant
 )

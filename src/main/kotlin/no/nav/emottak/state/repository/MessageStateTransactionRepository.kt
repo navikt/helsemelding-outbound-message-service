@@ -1,6 +1,7 @@
 package no.nav.emottak.state.repository
 
-import no.nav.emottak.state.model.MessageDeliveryState
+import no.nav.emottak.state.model.AppRecStatus
+import no.nav.emottak.state.model.ExternalDeliveryState
 import no.nav.emottak.state.model.MessageStateSnapshot
 import no.nav.emottak.state.model.MessageType
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -12,7 +13,6 @@ import kotlin.uuid.Uuid
 interface MessageStateTransactionRepository {
     suspend fun createInitialState(
         messageType: MessageType,
-        initialState: MessageDeliveryState,
         externalRefId: Uuid,
         externalMessageUrl: URL,
         occurredAt: Instant
@@ -20,9 +20,11 @@ interface MessageStateTransactionRepository {
 
     suspend fun recordStateChange(
         messageType: MessageType,
-        oldState: MessageDeliveryState,
-        newState: MessageDeliveryState,
         externalRefId: Uuid,
+        oldDeliveryState: ExternalDeliveryState?,
+        newDeliveryState: ExternalDeliveryState?,
+        oldAppRecStatus: AppRecStatus?,
+        newAppRecStatus: AppRecStatus?,
         occurredAt: Instant
     ): MessageStateSnapshot
 }
@@ -35,51 +37,55 @@ class ExposedMessageStateTransactionRepository(
 
     override suspend fun createInitialState(
         messageType: MessageType,
-        initialState: MessageDeliveryState,
         externalRefId: Uuid,
         externalMessageUrl: URL,
         occurredAt: Instant
     ): MessageStateSnapshot = suspendTransaction(database) {
-        val state = messageRepository.createState(
+        val messageState = messageRepository.create(
             messageType = messageType,
-            state = initialState,
             externalRefId = externalRefId,
             externalMessageUrl = externalMessageUrl,
             lastStateChange = occurredAt
         )
 
-        val history = historyRepository.append(
+        val historyEntries = historyRepository.append(
             messageId = externalRefId,
-            oldState = null,
-            newState = initialState,
+            oldDeliveryState = null,
+            newDeliveryState = null,
+            oldAppRecStatus = null,
+            newAppRecStatus = null,
             changedAt = occurredAt
         )
 
-        MessageStateSnapshot(state, history)
+        MessageStateSnapshot(messageState, historyEntries)
     }
 
     override suspend fun recordStateChange(
         messageType: MessageType,
-        oldState: MessageDeliveryState,
-        newState: MessageDeliveryState,
         externalRefId: Uuid,
+        oldDeliveryState: ExternalDeliveryState?,
+        newDeliveryState: ExternalDeliveryState?,
+        oldAppRecStatus: AppRecStatus?,
+        newAppRecStatus: AppRecStatus?,
         occurredAt: Instant
     ): MessageStateSnapshot = suspendTransaction(database) {
-        val messageState = messageRepository.updateState(
-            messageType = messageType,
-            state = newState,
+        val updatedState = messageRepository.updateState(
             externalRefId = externalRefId,
+            externalDeliveryState = newDeliveryState,
+            appRecStatus = newAppRecStatus,
             lastStateChange = occurredAt
         )
 
         val historyEntries = historyRepository.append(
             messageId = externalRefId,
-            oldState = oldState,
-            newState = newState,
+            oldDeliveryState = oldDeliveryState,
+            newDeliveryState = newDeliveryState,
+            oldAppRecStatus = oldAppRecStatus,
+            newAppRecStatus = newAppRecStatus,
             changedAt = occurredAt
         )
 
-        MessageStateSnapshot(messageState, historyEntries)
+        MessageStateSnapshot(updatedState, historyEntries)
     }
 }
 
@@ -87,16 +93,15 @@ class FakeMessageStateTransactionRepository(
     private val messageRepository: MessageRepository,
     private val historyRepository: MessageStateHistoryRepository
 ) : MessageStateTransactionRepository {
+
     override suspend fun createInitialState(
         messageType: MessageType,
-        initialState: MessageDeliveryState,
         externalRefId: Uuid,
         externalMessageUrl: URL,
         occurredAt: Instant
     ): MessageStateSnapshot {
-        val state = messageRepository.createState(
+        val state = messageRepository.create(
             messageType = messageType,
-            state = initialState,
             externalRefId = externalRefId,
             externalMessageUrl = externalMessageUrl,
             lastStateChange = occurredAt
@@ -104,8 +109,10 @@ class FakeMessageStateTransactionRepository(
 
         val history = historyRepository.append(
             messageId = externalRefId,
-            oldState = null,
-            newState = initialState,
+            oldDeliveryState = null,
+            newDeliveryState = null,
+            oldAppRecStatus = null,
+            newAppRecStatus = null,
             changedAt = occurredAt
         )
 
@@ -114,25 +121,29 @@ class FakeMessageStateTransactionRepository(
 
     override suspend fun recordStateChange(
         messageType: MessageType,
-        oldState: MessageDeliveryState,
-        newState: MessageDeliveryState,
         externalRefId: Uuid,
+        oldDeliveryState: ExternalDeliveryState?,
+        newDeliveryState: ExternalDeliveryState?,
+        oldAppRecStatus: AppRecStatus?,
+        newAppRecStatus: AppRecStatus?,
         occurredAt: Instant
     ): MessageStateSnapshot {
-        val messageState = messageRepository.updateState(
-            messageType = messageType,
-            state = newState,
+        val state = messageRepository.updateState(
             externalRefId = externalRefId,
+            externalDeliveryState = newDeliveryState,
+            appRecStatus = newAppRecStatus,
             lastStateChange = occurredAt
         )
 
-        val historyEntries = historyRepository.append(
+        val history = historyRepository.append(
             messageId = externalRefId,
-            oldState = oldState,
-            newState = newState,
+            oldDeliveryState = oldDeliveryState,
+            newDeliveryState = newDeliveryState,
+            oldAppRecStatus = oldAppRecStatus,
+            newAppRecStatus = newAppRecStatus,
             changedAt = occurredAt
         )
 
-        return MessageStateSnapshot(messageState, historyEntries)
+        return MessageStateSnapshot(state, history)
     }
 }

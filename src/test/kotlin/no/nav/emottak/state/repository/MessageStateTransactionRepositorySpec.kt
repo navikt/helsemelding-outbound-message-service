@@ -5,8 +5,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import no.nav.emottak.state.container
 import no.nav.emottak.state.database
-import no.nav.emottak.state.model.MessageDeliveryState.NEW
-import no.nav.emottak.state.model.MessageDeliveryState.PROCESSED
+import no.nav.emottak.state.model.ExternalDeliveryState.Acknowledged
 import no.nav.emottak.state.model.MessageType.DIALOG
 import no.nav.emottak.state.shouldBeInstant
 import org.testcontainers.containers.PostgreSQLContainer
@@ -18,6 +17,7 @@ private const val MESSAGE = "http://exmaple.com/messages/1"
 
 class MessageStateTransactionRepositorySpec : StringSpec(
     {
+
         lateinit var container: PostgreSQLContainer<Nothing>
 
         beforeEach {
@@ -25,79 +25,91 @@ class MessageStateTransactionRepositorySpec : StringSpec(
             container.start()
         }
 
-        "Record state change - without previous transactions" {
+        "Record state change – initial creation has null external states" {
             resourceScope {
                 val database = database(container.jdbcUrl)
-                val messageStateTransactionRepository = ExposedMessageStateTransactionRepository(
+
+                val txRepo = ExposedMessageStateTransactionRepository(
                     database,
                     ExposedMessageRepository(database),
                     ExposedMessageStateHistoryRepository(database)
                 )
 
                 val externalRefId = Uuid.random()
-                val externalMessageUrl = URI.create(MESSAGE).toURL()
+                val url = URI.create(MESSAGE).toURL()
                 val now = Clock.System.now()
-                val snapshot = messageStateTransactionRepository.createInitialState(
-                    DIALOG,
-                    NEW,
-                    externalRefId,
-                    externalMessageUrl,
-                    now
+
+                val snapshot = txRepo.createInitialState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId,
+                    externalMessageUrl = url,
+                    occurredAt = now
                 )
 
-                snapshot.messageState.messageType shouldBe DIALOG
-                snapshot.messageState.currentState shouldBe NEW
-                snapshot.messageState.externalRefId shouldBe externalRefId
-                snapshot.messageState.externalMessageUrl shouldBe externalMessageUrl
+                val msg = snapshot.messageState
+
+                msg.messageType shouldBe DIALOG
+                msg.externalRefId shouldBe externalRefId
+                msg.externalMessageUrl shouldBe url
+
+                msg.externalDeliveryState shouldBe null
+                msg.appRecStatus shouldBe null
 
                 snapshot.messageStateChange.size shouldBe 1
+                val entry = snapshot.messageStateChange.first()
 
-                val stateChange = snapshot.messageStateChange.first()
-
-                stateChange.messageId shouldBe externalRefId
-                stateChange.oldState shouldBe null
-                stateChange.newState shouldBe NEW
-                stateChange.changedAt shouldBeInstant now
+                entry.messageId shouldBe externalRefId
+                entry.oldDeliveryState shouldBe null
+                entry.newDeliveryState shouldBe null
+                entry.oldAppRecStatus shouldBe null
+                entry.newAppRecStatus shouldBe null
+                entry.changedAt shouldBeInstant now
             }
         }
 
-        "Record state change - with previous transactions" {
+        "Record state change – with previous transactions" {
             resourceScope {
                 val database = database(container.jdbcUrl)
-                val messageStateTransactionRepository = ExposedMessageStateTransactionRepository(
+
+                val txRepo = ExposedMessageStateTransactionRepository(
                     database,
                     ExposedMessageRepository(database),
                     ExposedMessageStateHistoryRepository(database)
                 )
 
                 val externalRefId = Uuid.random()
-                val externalMessageUrl = URI.create(MESSAGE).toURL()
+                val url = URI.create(MESSAGE).toURL()
                 val now = Clock.System.now()
 
-                messageStateTransactionRepository.createInitialState(
-                    DIALOG,
-                    NEW,
-                    externalRefId,
-                    externalMessageUrl,
-                    now
+                txRepo.createInitialState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId,
+                    externalMessageUrl = url,
+                    occurredAt = now
                 )
 
-                val snapshot = messageStateTransactionRepository.recordStateChange(
-                    DIALOG,
-                    NEW,
-                    PROCESSED,
-                    externalRefId,
-                    now
+                val snapshot = txRepo.recordStateChange(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId,
+                    oldDeliveryState = null,
+                    newDeliveryState = Acknowledged,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null,
+                    occurredAt = now
                 )
 
                 snapshot.messageStateChange.size shouldBe 2
 
-                val stateChange = snapshot.messageStateChange.last()
+                val entry = snapshot.messageStateChange.last()
 
-                stateChange.messageId shouldBe externalRefId
-                stateChange.oldState shouldBe NEW
-                stateChange.newState shouldBe PROCESSED
-                stateChange.changedAt shouldBeInstant now
+                entry.messageId shouldBe externalRefId
+                entry.oldDeliveryState shouldBe null
+                entry.newDeliveryState shouldBe Acknowledged
+
+                entry.oldAppRecStatus shouldBe null
+                entry.newAppRecStatus shouldBe null
+
+                entry.changedAt shouldBeInstant now
             }
         }
 

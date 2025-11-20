@@ -1,11 +1,10 @@
 package no.nav.emottak.state.repository
 
 import no.nav.emottak.state.config
-import no.nav.emottak.state.model.MessageDeliveryState
-import no.nav.emottak.state.model.MessageDeliveryState.NEW
+import no.nav.emottak.state.model.AppRecStatus
+import no.nav.emottak.state.model.ExternalDeliveryState
 import no.nav.emottak.state.model.MessageState
 import no.nav.emottak.state.model.MessageType
-import no.nav.emottak.state.repository.Messages.currentState
 import no.nav.emottak.state.repository.Messages.lastPolledAt
 import no.nav.emottak.state.util.UrlTransformer
 import no.nav.emottak.state.util.UuidTransformer
@@ -33,16 +32,24 @@ import kotlin.uuid.Uuid
 
 object Messages : Table("messages") {
     val id = uuid("id").transform(UuidTransformer())
-
     override val primaryKey = PrimaryKey(id)
 
     val externalRefId = uuid("external_reference_id")
         .transform(UuidTransformer())
         .uniqueIndex()
 
-    val externalMessageUrl = text("external_message_url").transform(UrlTransformer).uniqueIndex()
+    val externalMessageUrl = text("external_message_url")
+        .transform(UrlTransformer)
+        .uniqueIndex()
+
     val messageType = enumerationByName("message_type", 100, MessageType::class)
-    val currentState = enumerationByName("current_state", 100, MessageDeliveryState::class)
+
+    val externalDeliveryState = enumerationByName("external_delivery_state", 100, ExternalDeliveryState::class)
+        .nullable()
+
+    val appRecStatus = enumerationByName("app_rec_status", 100, AppRecStatus::class)
+        .nullable()
+
     val lastStateChange = timestamp("last_state_change")
     val lastPolledAt = timestamp("last_polled_at").nullable()
     val createdAt = timestamp("created_at")
@@ -50,18 +57,17 @@ object Messages : Table("messages") {
 }
 
 interface MessageRepository {
-    suspend fun createState(
+    suspend fun create(
         messageType: MessageType,
-        state: MessageDeliveryState,
         externalRefId: Uuid,
         externalMessageUrl: URL,
         lastStateChange: Instant
     ): MessageState
 
     suspend fun updateState(
-        messageType: MessageType,
-        state: MessageDeliveryState,
         externalRefId: Uuid,
+        externalDeliveryState: ExternalDeliveryState?,
+        appRecStatus: AppRecStatus?,
         lastStateChange: Instant
     ): MessageState
 
@@ -75,32 +81,33 @@ interface MessageRepository {
 class ExposedMessageRepository(private val database: Database) : MessageRepository {
     private val poller = config().poller
 
-    override suspend fun createState(
+    override suspend fun create(
         messageType: MessageType,
-        state: MessageDeliveryState,
         externalRefId: Uuid,
         externalMessageUrl: URL,
         lastStateChange: Instant
     ): MessageState =
         Messages.insertReturning { insert ->
             insert[Messages.messageType] = messageType
-            insert[currentState] = state
             insert[Messages.externalRefId] = externalRefId
             insert[Messages.externalMessageUrl] = externalMessageUrl
+            insert[Messages.externalDeliveryState] = null
+            insert[Messages.appRecStatus] = null
             insert[Messages.lastStateChange] = lastStateChange
-            insert[updatedAt] = CurrentTimestamp
+            insert[Messages.updatedAt] = CurrentTimestamp
         }
             .single()
             .toMessageState()
 
     override suspend fun updateState(
-        messageType: MessageType,
-        state: MessageDeliveryState,
         externalRefId: Uuid,
+        externalDeliveryState: ExternalDeliveryState?,
+        appRecStatus: AppRecStatus?,
         lastStateChange: Instant
     ): MessageState =
         Messages.updateReturning(where = { Messages.externalRefId eq externalRefId }) { upsert ->
-            upsert[currentState] = state
+            upsert[Messages.externalDeliveryState] = externalDeliveryState
+            upsert[Messages.appRecStatus] = appRecStatus
             upsert[Messages.lastStateChange] = lastStateChange
             upsert[Messages.updatedAt] = CurrentTimestamp
         }
@@ -118,13 +125,16 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         Messages
             .selectAll()
             .where {
-                (currentState eq NEW) and
-                    ((lastPolledAt.isNull()) or lastPolledAt.olderThanSeconds(poller.minAgeSeconds))
+                (Messages.externalDeliveryState.isNull()) and
+                    (
+                        (lastPolledAt.isNull())
+                            or lastPolledAt.olderThanSeconds(poller.minAgeSeconds)
+                        )
             }
+            .orderBy(lastPolledAt to ASC_NULLS_FIRST)
+            .limit(poller.fetchLimit)
+            .map { it.toMessageState() }
     }
-        .orderBy(lastPolledAt to ASC_NULLS_FIRST)
-        .limit(poller.fetchLimit)
-        .map { it.toMessageState() }
 
     override suspend fun markPolled(externalRefIds: List<Uuid>): Int = suspendTransaction(database) {
         Messages.update({ Messages.externalRefId inList externalRefIds }) {
@@ -132,12 +142,13 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         }
     }
 
-    private fun ResultRow.toMessageState(): MessageState = MessageState(
+    private fun ResultRow.toMessageState() = MessageState(
         this[Messages.id],
         this[Messages.messageType],
         this[Messages.externalRefId],
         this[Messages.externalMessageUrl],
-        this[currentState],
+        this[Messages.externalDeliveryState],
+        this[Messages.appRecStatus],
         this[Messages.lastStateChange],
         this[lastPolledAt],
         this[Messages.createdAt],
@@ -148,9 +159,8 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
 class FakeMessageRepository : MessageRepository {
     private val messages = HashMap<Uuid, MessageState>()
 
-    override suspend fun createState(
+    override suspend fun create(
         messageType: MessageType,
-        state: MessageDeliveryState,
         externalRefId: Uuid,
         externalMessageUrl: URL,
         lastStateChange: Instant
@@ -158,9 +168,10 @@ class FakeMessageRepository : MessageRepository {
         val newMessage = MessageState(
             id = Uuid.random(),
             messageType = messageType,
-            currentState = state,
             externalRefId = externalRefId,
             externalMessageUrl = externalMessageUrl,
+            externalDeliveryState = null,
+            appRecStatus = null,
             lastStateChange = lastStateChange,
             lastPolledAt = null,
             createdAt = lastStateChange,
@@ -171,14 +182,15 @@ class FakeMessageRepository : MessageRepository {
     }
 
     override suspend fun updateState(
-        messageType: MessageType,
-        state: MessageDeliveryState,
         externalRefId: Uuid,
+        externalDeliveryState: ExternalDeliveryState?,
+        appRecStatus: AppRecStatus?,
         lastStateChange: Instant
     ): MessageState {
-        val existing = messages[externalRefId]
-        val updated = existing!!.copy(
-            currentState = state,
+        val existing = messages[externalRefId]!!
+        val updated = existing.copy(
+            externalDeliveryState = externalDeliveryState,
+            appRecStatus = appRecStatus,
             lastStateChange = lastStateChange,
             updatedAt = lastStateChange
         )
@@ -188,22 +200,21 @@ class FakeMessageRepository : MessageRepository {
 
     override suspend fun findOrNull(id: Uuid): MessageState? = messages[id]
 
-    override suspend fun findForPolling(): List<MessageState> = messages
-        .values
-        .filter { it.currentState == NEW }
-        .take(100)
+    override suspend fun findForPolling(): List<MessageState> =
+        messages.values
+            .filter { it.externalDeliveryState == null }
+            .take(100)
 
     override suspend fun markPolled(externalRefIds: List<Uuid>): Int {
         val now = Clock.System.now()
-        var updatedCount = 0
+        var count = 0
 
         externalRefIds.forEach { id ->
-            messages[id]?.let { existing ->
-                messages[id] = existing.copy(lastPolledAt = now)
-                updatedCount++
+            messages[id]?.let { msg ->
+                messages[id] = msg.copy(lastPolledAt = now)
+                count++
             }
         }
-
-        return updatedCount
+        return count
     }
 }

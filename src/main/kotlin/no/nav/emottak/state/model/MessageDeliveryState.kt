@@ -2,7 +2,7 @@ package no.nav.emottak.state.model
 
 enum class MessageDeliveryState {
     NEW,
-    PROCESSED,
+    PENDING,
     COMPLETED,
     REJECTED
 }

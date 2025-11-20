@@ -4,8 +4,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
-import no.nav.emottak.state.model.MessageDeliveryState.COMPLETED
-import no.nav.emottak.state.model.MessageDeliveryState.NEW
+import no.nav.emottak.state.model.ExternalDeliveryState.Acknowledged
 import no.nav.emottak.state.model.MessageType.DIALOG
 import no.nav.emottak.state.repository.FakeMessageRepository
 import no.nav.emottak.state.repository.FakeMessageStateHistoryRepository
@@ -18,7 +17,8 @@ private const val MESSAGE2 = "http://exmaple.com/messages/2"
 
 class MessageStateServiceSpec : StringSpec(
     {
-        "Create initial state - creates state and one history entry" {
+
+        "Create initial state – creates message with null external states and one baseline history entry" {
             val messageStateService = transactionalMessageStateService()
 
             val externalRefId = Uuid.random()
@@ -27,117 +27,118 @@ class MessageStateServiceSpec : StringSpec(
             val snapshot = messageStateService.createInitialState(
                 messageType = DIALOG,
                 externalRefId = externalRefId,
-                externalMessageUrl = externalMessageUrl,
-                initialState = NEW
+                externalMessageUrl = externalMessageUrl
             )
 
-            snapshot.messageState.externalRefId shouldBe externalRefId
-            snapshot.messageState.externalMessageUrl shouldBe externalMessageUrl
-            snapshot.messageState.currentState shouldBe NEW
+            val messageState = snapshot.messageState
+
+            messageState.externalRefId shouldBe externalRefId
+            messageState.externalMessageUrl shouldBe externalMessageUrl
+
+            messageState.externalDeliveryState shouldBe null
+            messageState.appRecStatus shouldBe null
+
             snapshot.messageStateChange.size shouldBe 1
-            snapshot.messageStateChange.first().newState shouldBe NEW
-            snapshot.messageStateChange.first().oldState shouldBe null
+            val history = snapshot.messageStateChange.first()
+
+            history.oldDeliveryState shouldBe null
+            history.newDeliveryState shouldBe null
+            history.oldAppRecStatus shouldBe null
+            history.newAppRecStatus shouldBe null
         }
 
-        "Record state change - updates current state and appends history" {
+        "Record state change – updates external state and appends history" {
             val messageStateService = transactionalMessageStateService()
 
-            val externalRefId = Uuid.random()
-            val externalMessageUrl = URI(MESSAGE1).toURL()
+            val refId = Uuid.random()
+            val url = URI(MESSAGE1).toURL()
 
             messageStateService.createInitialState(
-                DIALOG,
-                externalRefId,
-                externalMessageUrl,
-                NEW
-            )
-            val updated = messageStateService.recordStateChange(
-                DIALOG,
-                NEW,
-                COMPLETED,
-                externalRefId
+                messageType = DIALOG,
+                externalRefId = refId,
+                externalMessageUrl = url
             )
 
-            updated.messageState.currentState shouldBe COMPLETED
+            val updated = messageStateService.recordStateChange(
+                messageType = DIALOG,
+                externalRefId = refId,
+                oldDeliveryState = null,
+                newDeliveryState = Acknowledged,
+                oldAppRecStatus = null,
+                newAppRecStatus = null
+            )
+
+            updated.messageState.externalDeliveryState shouldBe Acknowledged
+
             updated.messageStateChange.size shouldBe 2
-            updated.messageStateChange.last().newState shouldBe COMPLETED
+            val last = updated.messageStateChange.last()
+
+            last.oldDeliveryState shouldBe null
+            last.newDeliveryState shouldBe Acknowledged
+            last.oldAppRecStatus shouldBe null
+            last.newAppRecStatus shouldBe null
         }
 
-        "Get message snapshot  - returns null when missing" {
+        "Get message snapshot – returns null when missing" {
             val messageStateService = transactionalMessageStateService()
+
             messageStateService.getMessageSnapshot(Uuid.random()).shouldBeNull()
         }
 
-        "Find pollable messages - returns only NEW messages" {
+        "Find pollable messages – returns only messages with externalDeliveryState == null" {
             val messageStateService = transactionalMessageStateService()
 
-            val externalRefId1 = Uuid.random()
-            val externalMessageUrl1 = URI(MESSAGE1).toURL()
-            val externalRefId2 = Uuid.random()
-            val externalMessageUrl2 = URI(MESSAGE2).toURL()
+            val ref1 = Uuid.random()
+            val url1 = URI(MESSAGE1).toURL()
+
+            val ref2 = Uuid.random()
+            val url2 = URI(MESSAGE2).toURL()
 
             messageStateService.createInitialState(
-                DIALOG,
-                externalRefId1,
-                externalMessageUrl1,
-                NEW
+                messageType = DIALOG,
+                externalRefId = ref1,
+                externalMessageUrl = url1
             )
+
             messageStateService.createInitialState(
-                DIALOG,
-                externalRefId2,
-                externalMessageUrl2,
-                COMPLETED
+                messageType = DIALOG,
+                externalRefId = ref2,
+                externalMessageUrl = url2
+            )
+            messageStateService.recordStateChange(
+                messageType = DIALOG,
+                externalRefId = ref2,
+                oldDeliveryState = null,
+                newDeliveryState = Acknowledged,
+                oldAppRecStatus = null,
+                newAppRecStatus = null
             )
 
             val result = messageStateService.findPollableMessages()
 
             result.size shouldBe 1
-            result.first().externalRefId shouldBe externalRefId1
+            result.first().externalRefId shouldBe ref1
         }
 
-        "Mark as polled - updates last polled at for given messages" {
+        "Mark as polled – updates lastPolledAt only for selected messages" {
             val messageStateService = transactionalMessageStateService()
 
-            val externalRefId1 = Uuid.random()
-            val externalMessageUrl1 = URI(MESSAGE1).toURL()
-            val externalRefId2 = Uuid.random()
-            val externalMessageUrl2 = URI(MESSAGE2).toURL()
+            val ref1 = Uuid.random()
+            val url1 = URI(MESSAGE1).toURL()
+            val ref2 = Uuid.random()
+            val url2 = URI(MESSAGE2).toURL()
 
-            // Create two states
-            messageStateService.createInitialState(
-                DIALOG,
-                externalRefId1,
-                externalMessageUrl1,
-                NEW
-            )
-            messageStateService.createInitialState(
-                DIALOG,
-                externalRefId2,
-                externalMessageUrl2,
-                NEW
-            )
+            messageStateService.createInitialState(DIALOG, ref1, url1)
+            messageStateService.createInitialState(DIALOG, ref2, url2)
 
-            messageStateService
-                .getMessageSnapshot(externalRefId1)!!
-                .messageState
-                .lastPolledAt
-                .shouldBeNull()
+            messageStateService.getMessageSnapshot(ref1)!!.messageState.lastPolledAt.shouldBeNull()
+            messageStateService.getMessageSnapshot(ref2)!!.messageState.lastPolledAt.shouldBeNull()
 
-            messageStateService
-                .getMessageSnapshot(externalRefId2)!!
-                .messageState
-                .lastPolledAt
-                .shouldBeNull()
+            val updated = messageStateService.markAsPolled(listOf(ref1))
+            updated shouldBe 1
 
-            val updatedCount = messageStateService.markAsPolled(listOf(externalRefId1))
-
-            updatedCount shouldBe 1
-
-            val msg1 = messageStateService.getMessageSnapshot(externalRefId1)!!.messageState
-            val msg2 = messageStateService.getMessageSnapshot(externalRefId2)!!.messageState
-
-            msg1.lastPolledAt shouldNotBe null
-            msg2.lastPolledAt shouldBe null
+            messageStateService.getMessageSnapshot(ref1)!!.messageState.lastPolledAt shouldNotBe null
+            messageStateService.getMessageSnapshot(ref2)!!.messageState.lastPolledAt shouldBe null
         }
     }
 )
@@ -149,7 +150,6 @@ private fun transactionalMessageStateService(): TransactionalMessageStateService
         messageRepository,
         historyRepository
     )
-
     return TransactionalMessageStateService(
         messageRepository,
         historyRepository,
