@@ -5,8 +5,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import no.nav.emottak.state.container
 import no.nav.emottak.state.database
+import no.nav.emottak.state.model.CreateState
 import no.nav.emottak.state.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.emottak.state.model.MessageType.DIALOG
+import no.nav.emottak.state.model.UpdateState
 import no.nav.emottak.state.shouldBeInstant
 import org.testcontainers.containers.PostgreSQLContainer
 import java.net.URI
@@ -40,10 +42,12 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                 val now = Clock.System.now()
 
                 val snapshot = messageStateTransactionRepository.createInitialState(
-                    messageType = DIALOG,
-                    externalRefId = externalRefId,
-                    externalMessageUrl = url,
-                    occurredAt = now
+                    CreateState(
+                        messageType = DIALOG,
+                        externalRefId = externalRefId,
+                        externalMessageUrl = url,
+                        occurredAt = now
+                    )
                 )
 
                 val messageState = snapshot.messageState
@@ -82,20 +86,24 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                 val now = Clock.System.now()
 
                 messageStateTransactionRepository.createInitialState(
-                    messageType = DIALOG,
-                    externalRefId = externalRefId,
-                    externalMessageUrl = externalMessageUrl,
-                    occurredAt = now
+                    CreateState(
+                        messageType = DIALOG,
+                        externalRefId = externalRefId,
+                        externalMessageUrl = externalMessageUrl,
+                        occurredAt = now
+                    )
                 )
 
                 val snapshot = messageStateTransactionRepository.recordStateChange(
-                    messageType = DIALOG,
-                    externalRefId = externalRefId,
-                    oldDeliveryState = null,
-                    newDeliveryState = ACKNOWLEDGED,
-                    oldAppRecStatus = null,
-                    newAppRecStatus = null,
-                    occurredAt = now
+                    UpdateState(
+                        messageType = DIALOG,
+                        externalRefId = externalRefId,
+                        oldDeliveryState = null,
+                        newDeliveryState = ACKNOWLEDGED,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        occurredAt = now
+                    )
                 )
 
                 snapshot.messageStateChange.size shouldBe 2

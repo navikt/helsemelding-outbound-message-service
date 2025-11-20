@@ -4,8 +4,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import no.nav.emottak.state.model.CreateState
 import no.nav.emottak.state.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.emottak.state.model.MessageType.DIALOG
+import no.nav.emottak.state.model.UpdateState
 import no.nav.emottak.state.repository.FakeMessageRepository
 import no.nav.emottak.state.repository.FakeMessageStateHistoryRepository
 import no.nav.emottak.state.repository.FakeMessageStateTransactionRepository
@@ -25,9 +27,11 @@ class MessageStateServiceSpec : StringSpec(
             val externalMessageUrl = URI(MESSAGE1).toURL()
 
             val snapshot = messageStateService.createInitialState(
-                messageType = DIALOG,
-                externalRefId = externalRefId,
-                externalMessageUrl = externalMessageUrl
+                CreateState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId,
+                    externalMessageUrl = externalMessageUrl
+                )
             )
 
             val messageState = snapshot.messageState
@@ -54,18 +58,22 @@ class MessageStateServiceSpec : StringSpec(
             val externalMessageUrl = URI(MESSAGE1).toURL()
 
             messageStateService.createInitialState(
-                messageType = DIALOG,
-                externalRefId = externalRefId,
-                externalMessageUrl = externalMessageUrl
+                CreateState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId,
+                    externalMessageUrl = externalMessageUrl
+                )
             )
 
             val updated = messageStateService.recordStateChange(
-                messageType = DIALOG,
-                externalRefId = externalRefId,
-                oldDeliveryState = null,
-                newDeliveryState = ACKNOWLEDGED,
-                oldAppRecStatus = null,
-                newAppRecStatus = null
+                UpdateState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId,
+                    oldDeliveryState = null,
+                    newDeliveryState = ACKNOWLEDGED,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null
+                )
             )
 
             updated.messageState.externalDeliveryState shouldBe ACKNOWLEDGED
@@ -95,23 +103,30 @@ class MessageStateServiceSpec : StringSpec(
             val externalMessageUrl2 = URI(MESSAGE2).toURL()
 
             messageStateService.createInitialState(
-                messageType = DIALOG,
-                externalRefId = externalRefId1,
-                externalMessageUrl = externalMessageUrl1
+                CreateState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId1,
+                    externalMessageUrl = externalMessageUrl1
+                )
             )
 
             messageStateService.createInitialState(
-                messageType = DIALOG,
-                externalRefId = externalRefId2,
-                externalMessageUrl = externalMessageUrl2
+                CreateState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId2,
+                    externalMessageUrl = externalMessageUrl2
+                )
             )
+
             messageStateService.recordStateChange(
-                messageType = DIALOG,
-                externalRefId = externalRefId2,
-                oldDeliveryState = null,
-                newDeliveryState = ACKNOWLEDGED,
-                oldAppRecStatus = null,
-                newAppRecStatus = null
+                UpdateState(
+                    messageType = DIALOG,
+                    externalRefId = externalRefId2,
+                    oldDeliveryState = null,
+                    newDeliveryState = ACKNOWLEDGED,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null
+                )
             )
 
             val result = messageStateService.findPollableMessages()
@@ -128,8 +143,20 @@ class MessageStateServiceSpec : StringSpec(
             val externalRefId2 = Uuid.random()
             val externalMessageUrl2 = URI(MESSAGE2).toURL()
 
-            messageStateService.createInitialState(DIALOG, externalRefId1, externalMessageUrl1)
-            messageStateService.createInitialState(DIALOG, externalRefId2, externalMessageUrl2)
+            messageStateService.createInitialState(
+                CreateState(
+                    DIALOG,
+                    externalRefId1,
+                    externalMessageUrl1
+                )
+            )
+            messageStateService.createInitialState(
+                CreateState(
+                    DIALOG,
+                    externalRefId2,
+                    externalMessageUrl2
+                )
+            )
 
             messageStateService.getMessageSnapshot(externalRefId1)!!.messageState.lastPolledAt.shouldBeNull()
             messageStateService.getMessageSnapshot(externalRefId2)!!.messageState.lastPolledAt.shouldBeNull()
