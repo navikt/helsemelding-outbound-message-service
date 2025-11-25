@@ -19,8 +19,8 @@ import no.nav.emottak.state.model.ediadapter.Message
 import no.nav.emottak.state.model.ediadapter.PostAppRecRequest
 import no.nav.emottak.state.model.ediadapter.PostMessageRequest
 import no.nav.emottak.state.model.ediadapter.StatusInfo
-import kotlin.uuid.Uuid
 import org.slf4j.LoggerFactory
+import kotlin.uuid.Uuid
 
 class EdiAdapterClient(
     private val ediAdapterUrl: String,
