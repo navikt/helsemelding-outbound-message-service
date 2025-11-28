@@ -1,12 +1,14 @@
 package no.nav.emottak.state.config
 
 import com.sksamuel.hoplite.Masked
+import com.zaxxer.hikari.HikariConfig
 import kotlinx.serialization.Serializable
+import no.nav.emottak.utils.config.Kafka
 import no.nav.emottak.utils.config.Server
-import java.util.Properties
 import kotlin.time.Duration
 
 data class Config(
+    val kafka: Kafka,
     val server: Server,
     val poller: Poller,
     val database: Database
@@ -14,7 +16,8 @@ data class Config(
 
 data class Poller(
     val fetchLimit: Int,
-    val minAgeSeconds: Duration
+    val minAgeSeconds: Duration,
+    val scheduleInterval: Duration
 )
 
 data class Database(
@@ -67,20 +70,38 @@ data class Database(
 
     @Serializable
     data class Flyway(val locations: String, val baselineOnMigrate: Boolean)
-}
 
-fun Database.toProperties() = Properties()
-    .apply {
-        put("jdbcUrl", url.value)
-        put("username", username.value)
-        put("password", password.value)
-        put("driverClassName", driverClassName.value)
-        put("minimumIdle", minimumIdleConnections.value)
-        put("maxLifetime", maxLifetimeConnections.value)
-        put("maximumPoolSize", maxConnectionPoolSize.value)
-        put("connectionTimeout", connectionTimeout.value)
-        put("idleTimeout", idleConnectionTimeout.value)
-        put("dataSource.cachePrepStmts", cachePreparedStatements.value)
-        put("dataSource.prepStmtCacheSize", preparedStatementsCacheSize.value)
-        put("dataSource.prepStmtCacheSqlLimit", preparedStatementsCacheSqlLimit.value)
-    }
+    // fun toHikariConfig(): HikariConfig = Properties()
+    //     .apply {
+    //         put("jdbcUrl", url.value)
+    //         put("username", username.value)
+    //         put("password", password.value)
+    //         put("driverClassName", driverClassName.value)
+    //         put("minimumIdle", minimumIdleConnections.value)
+    //         put("maxLifetime", maxLifetimeConnections.value)
+    //         put("maximumPoolSize", maxConnectionPoolSize.value)
+    //         put("connectionTimeout", connectionTimeout.value)
+    //         put("idleTimeout", idleConnectionTimeout.value)
+    //         put("dataSource.cachePrepStmts", cachePreparedStatements.value)
+    //         put("dataSource.prepStmtCacheSize", preparedStatementsCacheSize.value)
+    //         put("dataSource.prepStmtCacheSqlLimit", preparedStatementsCacheSqlLimit.value)
+    //     }
+    //     .let(::HikariConfig)
+
+    fun toHikariConfig(): HikariConfig =
+        HikariConfig().apply {
+            jdbcUrl = url.value
+            username = this@Database.username.value
+            password = this@Database.password.value
+            driverClassName = this@Database.driverClassName.value
+            minimumIdle = minimumIdleConnections.value
+            maxLifetime = maxLifetimeConnections.value.toLong()
+            maximumPoolSize = maxConnectionPoolSize.value
+            connectionTimeout = this@Database.connectionTimeout.value.toLong()
+            idleTimeout = idleConnectionTimeout.value.toLong()
+
+            addDataSourceProperty("cachePrepStmts", cachePreparedStatements.value)
+            addDataSourceProperty("prepStmtCacheSize", preparedStatementsCacheSize.value)
+            addDataSourceProperty("prepStmtCacheSqlLimit", preparedStatementsCacheSqlLimit.value)
+        }
+}

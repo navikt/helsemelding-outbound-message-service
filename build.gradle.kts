@@ -34,7 +34,9 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().all {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_21)
         freeCompilerArgs.add("-opt-in=kotlin.time.ExperimentalTime")
+        freeCompilerArgs.add("-opt-in=kotlinx.coroutines.FlowPreview")
         freeCompilerArgs.add("-opt-in=kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.add("-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi")
         freeCompilerArgs.add("-opt-in=arrow.fx.coroutines.await.ExperimentalAwaitAllApi")
     }
 }
@@ -68,6 +70,7 @@ dependencies {
     implementation(libs.hikari)
     implementation(libs.flyway.postgresql)
     implementation(libs.postgresql)
+    implementation(libs.kotlin.kafka)
     implementation(libs.token.validation.ktor.v3)
     implementation(libs.emottak.utils)
     testImplementation(testLibs.bundles.kotest)

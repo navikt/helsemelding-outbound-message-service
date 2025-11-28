@@ -20,6 +20,7 @@ dependencyResolutionManagement {
             version("token-validation-ktor", "5.0.15")
             version("eclipse-angus", "2.0.2")
             version("exposed", "1.0.0-rc-3")
+            version("kotlin-kafka", "0.4.1")
             version("flyway", "11.8.0")
             version("postgresql", "42.7.5")
             version("hikari", "6.3.0")
@@ -62,6 +63,8 @@ dependencyResolutionManagement {
             library("hikari", "com.zaxxer", "HikariCP").versionRef("hikari")
             library("flyway-postgresql", "org.flywaydb", "flyway-database-postgresql").versionRef("flyway")
             library("postgresql", "org.postgresql", "postgresql").versionRef("postgresql")
+
+            library("kotlin-kafka", "io.github.nomisrev", "kotlin-kafka").versionRef("kotlin-kafka")
 
             library("kotlin-logging", "io.github.oshai", "kotlin-logging-jvm").versionRef("kotlin-logging")
             library("logback-classic", "ch.qos.logback", "logback-classic").versionRef("logback")

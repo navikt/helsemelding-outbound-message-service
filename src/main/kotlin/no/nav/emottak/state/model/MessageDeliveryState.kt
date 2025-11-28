@@ -4,5 +4,6 @@ enum class MessageDeliveryState {
     NEW,
     PENDING,
     COMPLETED,
-    REJECTED
+    REJECTED,
+    INVALID
 }
