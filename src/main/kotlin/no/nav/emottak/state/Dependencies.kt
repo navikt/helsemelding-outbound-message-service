@@ -5,6 +5,8 @@ import arrow.fx.coroutines.ResourceScope
 import arrow.fx.coroutines.await.awaitAll
 import com.zaxxer.hikari.HikariDataSource
 import io.github.nomisRev.kafka.publisher.KafkaPublisher
+import io.github.nomisRev.kafka.receiver.AutoOffsetReset
+import io.github.nomisRev.kafka.receiver.KafkaReceiver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micrometer.prometheus.PrometheusConfig.DEFAULT
 import io.micrometer.prometheus.PrometheusMeterRegistry
@@ -25,6 +27,7 @@ data class Dependencies(
     val database: Database,
     val ediAdapterClient: EdiAdapterClient,
     val meterRegistry: PrometheusMeterRegistry,
+    val kafkaReceiver: KafkaReceiver<String, ByteArray>,
     val kafkaPublisher: KafkaPublisher<String, ByteArray>
 )
 
@@ -42,6 +45,9 @@ internal suspend fun ResourceScope.kafkaPublisher(kafka: Kafka): KafkaPublisher<
     install({ KafkaPublisher(kafka.toPublisherSettings()) }) { p, _: ExitCase ->
         p.close().also { log.info { "Closed kafka publisher" } }
     }
+
+internal fun kafkaReceiver(kafka: Kafka, autoOffsetReset: AutoOffsetReset): KafkaReceiver<String, ByteArray> =
+    KafkaReceiver(kafka.toReceiverSettings(kafka, autoOffsetReset))
 
 internal suspend fun ResourceScope.dataSource(config: DatabaseConfig): HikariDataSource =
     install({ HikariDataSource(config.toHikariConfig()) }) { h, _: ExitCase ->
@@ -69,11 +75,13 @@ suspend fun ResourceScope.dependencies(): Dependencies = awaitAll {
     val dataSource = async { dataSource(config.database) }
     val ediAdapterClient = async { ediAdapterClient(config.ediAdapter) }
     val database = async { database(config.database, dataSource.await()) }
+    val kafkaReceiver = kafkaReceiver(config.kafka, AutoOffsetReset.Latest)
 
     Dependencies(
         database.await(),
         ediAdapterClient.await(),
         metricsRegistry.await(),
+        kafkaReceiver,
         kafkaPublisher.await()
     )
 }

@@ -86,6 +86,7 @@ dependencyResolutionManagement {
             version("kotest", "5.9.1")
             version("testcontainers", "1.18.1")
             version("kotest-extensions", "2.0.2")
+            version("turbine", "1.2.0")
 
             library("ktor-server-test-host", "io.ktor", "ktor-server-test-host").versionRef("ktor-server-test")
             library("ktor-client-mock", "io.ktor", "ktor-client-mock").versionRef("ktor")
@@ -100,6 +101,8 @@ dependencyResolutionManagement {
 
             library("testcontainers", "org.testcontainers", "testcontainers").versionRef("testcontainers")
             library("testcontainers-postgresql", "org.testcontainers", "postgresql").versionRef("testcontainers")
+
+            library("turbine", "app.cash.turbine", "turbine").versionRef("turbine")
 
             bundle("kotest", listOf("kotest-runner-junit5", "kotest-framework-datatest"))
         }

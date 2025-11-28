@@ -3,14 +3,19 @@ package no.nav.emottak.state.config
 import com.sksamuel.hoplite.Masked
 import com.zaxxer.hikari.HikariConfig
 import io.github.nomisRev.kafka.publisher.PublisherSettings
+import io.github.nomisRev.kafka.receiver.AutoOffsetReset
+import io.github.nomisRev.kafka.receiver.ReceiverSettings
 import kotlinx.serialization.Serializable
+import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.kafka.common.serialization.ByteArraySerializer
+import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.kafka.common.serialization.StringSerializer
 import java.util.Properties
 import kotlin.time.Duration
 
 data class Config(
     val kafka: Kafka,
+    val kafkaTopics: KafkaTopics,
     val server: Server,
     val poller: Poller,
     val database: Database,
@@ -60,6 +65,19 @@ data class Kafka(
             properties = toProperties()
         )
 
+    fun toReceiverSettings(
+        kafka: Kafka,
+        autoOffsetReset: AutoOffsetReset
+    ): ReceiverSettings<String, ByteArray> =
+        ReceiverSettings(
+            bootstrapServers = kafka.bootstrapServers,
+            keyDeserializer = StringDeserializer(),
+            valueDeserializer = ByteArrayDeserializer(),
+            groupId = kafka.groupId,
+            properties = kafka.toProperties(),
+            autoOffsetReset = autoOffsetReset
+        )
+
     private fun toProperties() = Properties()
         .apply {
             put(securityProtocolConfig, securityProtocol.value)
@@ -71,6 +89,12 @@ data class Kafka(
             put(sslTruststorePasswordConfig, truststorePassword.value)
         }
 }
+
+fun Config.withKafka(update: Kafka.() -> Kafka) = copy(kafka = kafka.update())
+
+data class KafkaTopics(
+    val messagesOutTopic: String
+)
 
 data class Server(
     val port: Port,

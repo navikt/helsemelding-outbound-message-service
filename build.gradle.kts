@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.bundles.prometheus)
     implementation(libs.hoplite.core)
     implementation(libs.hoplite.hocon)
+    implementation(libs.kotlin.kafka)
     implementation(libs.jwt)
     implementation(libs.nimbus.jwt)
     implementation(libs.ktor.client.auth)
@@ -81,6 +82,7 @@ dependencies {
     testImplementation(testLibs.ktor.client.mock)
     testImplementation(testLibs.testcontainers)
     testImplementation(testLibs.testcontainers.postgresql)
+    testImplementation(testLibs.turbine)
     testImplementation(kotlin("test"))
 }
 
