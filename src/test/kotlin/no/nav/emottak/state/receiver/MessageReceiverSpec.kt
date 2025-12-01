@@ -40,7 +40,7 @@ class MessageReceiverSpec : KafkaSpec(
                     publisher.publishScope {
                         publish(
                             ProducerRecord(
-                                config.kafkaTopics.messagesOutTopic,
+                                config.kafkaTopics.messagesInTopic,
                                 referenceId.toString(),
                                 content
                             )
@@ -54,8 +54,8 @@ class MessageReceiverSpec : KafkaSpec(
 
                     messages.test {
                         val message = awaitItem()
-                        message.messageId shouldBe referenceId
-                        message.envelope shouldBe content
+                        message.id shouldBe referenceId
+                        message.payload shouldBe content
                     }
                 }
             }

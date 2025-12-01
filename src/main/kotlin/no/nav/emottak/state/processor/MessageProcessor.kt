@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
 import no.nav.emottak.state.integration.ediadapter.EdiAdapterClient
 import no.nav.emottak.state.model.CreateState
-import no.nav.emottak.state.model.Message
+import no.nav.emottak.state.model.DialogMessage
 import no.nav.emottak.state.model.MessageType.DIALOG
 import no.nav.emottak.state.receiver.MessageReceiver
 import no.nav.emottak.state.service.MessageStateService
@@ -26,11 +26,11 @@ class MessageProcessor(
             .onEach { message -> processAndSendMessage(message) }
             .flowOn(Dispatchers.IO)
 
-    private fun messageFlow(): Flow<Message> =
+    private fun messageFlow(): Flow<DialogMessage> =
         messageReceiver.receiveMessages()
 
-    private suspend fun processAndSendMessage(message: Message) {
-        val uuid = ediAdapterClient.postMessage(message)
+    private suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
+        val uuid = ediAdapterClient.postMessage(dialogMessage)
 
         val createState = CreateState(
             messageType = DIALOG,
@@ -39,6 +39,6 @@ class MessageProcessor(
         )
 
         messageStateService.createInitialState(createState)
-        log.info { "Processed and sent message with reference id: ${message.messageId}" }
+        log.info { "Processed and sent message with reference id: ${dialogMessage.id}" }
     }
 }
