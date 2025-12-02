@@ -5,12 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.serialization.json.Json
 import no.nav.emottak.state.integration.ediadapter.EdiAdapterClient
 import no.nav.emottak.state.model.CreateState
 import no.nav.emottak.state.model.DialogMessage
 import no.nav.emottak.state.model.MessageType.DIALOG
-import no.nav.emottak.state.model.PostMessageResponse
 import no.nav.emottak.state.receiver.MessageReceiver
 import no.nav.emottak.state.service.MessageStateService
 import java.net.URI
@@ -31,8 +29,7 @@ class MessageProcessor(
         messageReceiver.receiveMessages()
 
     internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
-        val json = ediAdapterClient.postMessage(dialogMessage)
-        val messageResponse = Json.decodeFromString<PostMessageResponse>(json)
+        val messageResponse = ediAdapterClient.postMessage(dialogMessage)
 
         val createState = CreateState(
             messageType = DIALOG,

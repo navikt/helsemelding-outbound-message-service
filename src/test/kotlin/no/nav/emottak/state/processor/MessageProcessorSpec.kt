@@ -6,11 +6,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import no.nav.emottak.state.integration.ediadapter.EdiAdapterClient
 import no.nav.emottak.state.integration.ediadapter.FakeEdiAdapterClient
 import no.nav.emottak.state.model.DialogMessage
+import no.nav.emottak.state.model.PostMessageResponse
 import no.nav.emottak.state.receiver.MessageReceiver
 import no.nav.emottak.state.service.transactionalMessageStateService
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
@@ -23,15 +22,12 @@ class MessageProcessorSpec : StringSpec(
         "Process dialog message - Initialize message state with response from ediAdapterClient" {
             val uuid = Uuid.random()
             val url = "https://example.com/messages/1"
-            val responseJson = mapOf(
-                "id" to uuid.toString(),
-                "url" to url
-            ).run { Json.encodeToString(this) }
+            val messageResponse = PostMessageResponse(uuid, url)
             val messageStateService = transactionalMessageStateService()
             val messageProcessor = MessageProcessor(
                 dummyMessageReceiver(),
                 messageStateService,
-                stubEdiAdapterClient(responseJson)
+                stubEdiAdapterClient(messageResponse)
             )
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
 
@@ -46,8 +42,8 @@ class MessageProcessorSpec : StringSpec(
     }
 )
 
-private fun stubEdiAdapterClient(json: String): EdiAdapterClient = object : FakeEdiAdapterClient() {
-    override suspend fun postMessage(dialogMessage: DialogMessage): String = json
+private fun stubEdiAdapterClient(message: PostMessageResponse): EdiAdapterClient = object : FakeEdiAdapterClient() {
+    override suspend fun postMessage(dialogMessage: DialogMessage): PostMessageResponse = message
 }
 
 private fun dummyMessageReceiver(): MessageReceiver = MessageReceiver(
