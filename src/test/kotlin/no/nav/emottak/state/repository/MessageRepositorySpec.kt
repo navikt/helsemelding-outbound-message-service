@@ -202,12 +202,13 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         URI.create(MESSAGE4).toURL(),
                         Clock.System.now()
-                    ).also {
-                        Messages.update({ externalRefId eq it.externalRefId }) { row ->
-                            row[externalDeliveryState] = ACKNOWLEDGED
-                            row[appRecStatus] = AppRecStatus.OK
+                    )
+                        .also {
+                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                                row[externalDeliveryState] = ACKNOWLEDGED
+                                row[appRecStatus] = AppRecStatus.OK
+                            }
                         }
-                    }
 
                     messageRepository.createState(
                         DIALOG,
