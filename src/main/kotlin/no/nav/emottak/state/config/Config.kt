@@ -2,11 +2,20 @@ package no.nav.emottak.state.config
 
 import com.sksamuel.hoplite.Masked
 import com.zaxxer.hikari.HikariConfig
+import io.github.nomisRev.kafka.publisher.PublisherSettings
 import kotlinx.serialization.Serializable
-import no.nav.emottak.utils.config.Kafka
-import no.nav.emottak.utils.config.Server
+import org.apache.kafka.common.serialization.ByteArraySerializer
+import org.apache.kafka.common.serialization.StringSerializer
 import java.util.Properties
 import kotlin.time.Duration
+
+private const val SECURITY_PROTOCOL_CONFIG = "security.protocol"
+private const val SSL_KEYSTORE_TYPE_CONFIG = "ssl.keystore.type"
+private const val SSL_KEYSTORE_LOCATION_CONFIG = "ssl.keystore.location"
+private const val SSL_KEYSTORE_PASSWORD_CONFIG = "ssl.keystore.password"
+private const val SSL_TRUSTSTORE_TYPE_CONFIG = "ssl.truststore.type"
+private const val SSL_TRUSTSTORE_LOCATION_CONFIG = "ssl.truststore.location"
+private const val SSL_TRUSTSTORE_PASSWORD_CONFIG = "ssl.truststore.password"
 
 data class Config(
     val kafka: Kafka,
@@ -15,6 +24,60 @@ data class Config(
     val database: Database,
     val ediAdapter: EdiAdapter
 )
+
+data class Kafka(
+    val bootstrapServers: String,
+    val securityProtocol: SecurityProtocol,
+    val keystoreType: KeystoreType,
+    val keystoreLocation: KeystoreLocation,
+    val keystorePassword: Masked,
+    val truststoreType: TruststoreType,
+    val truststoreLocation: TruststoreLocation,
+    val truststorePassword: Masked,
+    val groupId: String
+) {
+    @JvmInline
+    value class SecurityProtocol(val value: String)
+
+    @JvmInline
+    value class KeystoreType(val value: String)
+
+    @JvmInline
+    value class KeystoreLocation(val value: String)
+
+    @JvmInline
+    value class TruststoreType(val value: String)
+
+    @JvmInline
+    value class TruststoreLocation(val value: String)
+
+    fun toPublisherSettings(): PublisherSettings<String, ByteArray> =
+        PublisherSettings(
+            bootstrapServers = bootstrapServers,
+            keySerializer = StringSerializer(),
+            valueSerializer = ByteArraySerializer(),
+            properties = toProperties()
+        )
+
+    private fun toProperties() = Properties()
+        .apply {
+            put(SECURITY_PROTOCOL_CONFIG, securityProtocol.value)
+            put(SSL_KEYSTORE_TYPE_CONFIG, keystoreType.value)
+            put(SSL_KEYSTORE_LOCATION_CONFIG, keystoreLocation.value)
+            put(SSL_KEYSTORE_PASSWORD_CONFIG, keystorePassword.value)
+            put(SSL_TRUSTSTORE_TYPE_CONFIG, truststoreType.value)
+            put(SSL_TRUSTSTORE_LOCATION_CONFIG, truststoreLocation.value)
+            put(SSL_TRUSTSTORE_PASSWORD_CONFIG, truststorePassword.value)
+        }
+}
+
+data class Server(
+    val port: Port,
+    val preWait: Duration
+) {
+    @JvmInline
+    value class Port(val value: Int)
+}
 
 data class EdiAdapter(
     val scope: Scope
