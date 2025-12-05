@@ -2,7 +2,6 @@ package no.nav.emottak.state.config
 
 import com.sksamuel.hoplite.Masked
 import kotlinx.serialization.Serializable
-import no.nav.emottak.utils.config.Server
 import java.util.Properties
 import kotlin.time.Duration
 
@@ -11,6 +10,14 @@ data class Config(
     val poller: Poller,
     val database: Database
 )
+
+data class Server(
+    val port: Port,
+    val preWait: Duration
+)
+
+@JvmInline
+value class Port(val value: Int)
 
 data class Poller(
     val fetchLimit: Int,

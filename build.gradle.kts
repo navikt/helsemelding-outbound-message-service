@@ -69,7 +69,6 @@ dependencies {
     implementation(libs.flyway.postgresql)
     implementation(libs.postgresql)
     implementation(libs.token.validation.ktor.v3)
-    implementation(libs.emottak.utils)
     testImplementation(testLibs.bundles.kotest)
     testImplementation(testLibs.kotest.assertions.arrow)
     testImplementation(testLibs.kotest.extensions.jvm)
