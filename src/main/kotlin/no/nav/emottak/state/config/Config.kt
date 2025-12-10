@@ -9,14 +9,6 @@ import org.apache.kafka.common.serialization.StringSerializer
 import java.util.Properties
 import kotlin.time.Duration
 
-private const val SECURITY_PROTOCOL_CONFIG = "security.protocol"
-private const val SSL_KEYSTORE_TYPE_CONFIG = "ssl.keystore.type"
-private const val SSL_KEYSTORE_LOCATION_CONFIG = "ssl.keystore.location"
-private const val SSL_KEYSTORE_PASSWORD_CONFIG = "ssl.keystore.password"
-private const val SSL_TRUSTSTORE_TYPE_CONFIG = "ssl.truststore.type"
-private const val SSL_TRUSTSTORE_LOCATION_CONFIG = "ssl.truststore.location"
-private const val SSL_TRUSTSTORE_PASSWORD_CONFIG = "ssl.truststore.password"
-
 data class Config(
     val kafka: Kafka,
     val server: Server,
@@ -36,6 +28,14 @@ data class Kafka(
     val truststorePassword: Masked,
     val groupId: String
 ) {
+    private val securityProtocolConfig = "security.protocol"
+    private val sslKeystoreTypeConfig = "ssl.keystore.type"
+    private val sslKeystoreLocationConfig = "ssl.keystore.location"
+    private val sslKeystorePasswordConfig = "ssl.keystore.password"
+    private val sslTruststoreTypeConfig = "ssl.truststore.type"
+    private val sslTruststoreLocationConfig = "ssl.truststore.location"
+    private val sslTruststorePasswordConfig = "ssl.truststore.password"
+
     @JvmInline
     value class SecurityProtocol(val value: String)
 
@@ -61,13 +61,13 @@ data class Kafka(
 
     private fun toProperties() = Properties()
         .apply {
-            put(SECURITY_PROTOCOL_CONFIG, securityProtocol.value)
-            put(SSL_KEYSTORE_TYPE_CONFIG, keystoreType.value)
-            put(SSL_KEYSTORE_LOCATION_CONFIG, keystoreLocation.value)
-            put(SSL_KEYSTORE_PASSWORD_CONFIG, keystorePassword.value)
-            put(SSL_TRUSTSTORE_TYPE_CONFIG, truststoreType.value)
-            put(SSL_TRUSTSTORE_LOCATION_CONFIG, truststoreLocation.value)
-            put(SSL_TRUSTSTORE_PASSWORD_CONFIG, truststorePassword.value)
+            put(securityProtocolConfig, securityProtocol.value)
+            put(sslKeystoreTypeConfig, keystoreType.value)
+            put(sslKeystoreLocationConfig, keystoreLocation.value)
+            put(sslKeystorePasswordConfig, keystorePassword.value)
+            put(sslTruststoreTypeConfig, truststoreType.value)
+            put(sslTruststoreLocationConfig, truststoreLocation.value)
+            put(sslTruststorePasswordConfig, truststorePassword.value)
         }
 }
 

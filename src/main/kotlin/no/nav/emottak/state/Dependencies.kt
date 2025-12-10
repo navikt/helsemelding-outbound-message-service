@@ -12,8 +12,7 @@ import no.nav.emottak.ediadapter.client.EdiAdapterClient
 import no.nav.emottak.ediadapter.client.HttpEdiAdapterClient
 import no.nav.emottak.ediadapter.client.scopedAuthHttpClient
 import no.nav.emottak.state.config.EdiAdapter
-import no.nav.emottak.utils.config.Kafka
-import no.nav.emottak.utils.config.toKafkaPublisherSettings
+import no.nav.emottak.state.config.Kafka
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.output.MigrateResult
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -40,7 +39,7 @@ internal suspend fun ResourceScope.ediAdapterClient(ediAdapter: EdiAdapter): Edi
     }
 
 internal suspend fun ResourceScope.kafkaPublisher(kafka: Kafka): KafkaPublisher<String, ByteArray> =
-    install({ KafkaPublisher(kafka.toKafkaPublisherSettings()) }) { p, _: ExitCase ->
+    install({ KafkaPublisher(kafka.toPublisherSettings()) }) { p, _: ExitCase ->
         p.close().also { log.info { "Closed kafka publisher" } }
     }
 

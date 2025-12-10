@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.kotlin.logging)
     implementation(libs.exposed.jdbc)
+    implementation(libs.edi.adapter.client)
     implementation(libs.exposed.datetime)
     implementation(libs.hikari)
     implementation(libs.flyway.postgresql)

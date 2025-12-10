@@ -26,7 +26,7 @@ import no.nav.emottak.state.service.MessageStateService
 import no.nav.emottak.state.service.PollerService
 import no.nav.emottak.state.service.StateEvaluatorService
 import no.nav.emottak.state.service.TransactionalMessageStateService
-import no.nav.emottak.utils.coroutines.coroutineScope
+import no.nav.emottak.state.util.coroutineScope
 import org.jetbrains.exposed.v1.jdbc.Database
 
 private val log = KotlinLogging.logger {}
