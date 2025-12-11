@@ -86,7 +86,7 @@ class PollerService(
     }
 
     private fun pollableMessages(): Flow<MessageState> =
-        flow { emit(messageStateService.findPollableMessages()) }
+        flow { emit(messageStateService.findPollableMessages().withLogging()) }
             .flatMapConcat { currentBatch ->
                 if (currentBatch.isEmpty()) {
                     emptyFlow()
@@ -166,5 +166,10 @@ class PollerService(
         )
         // should publish rejections to its own topic!
         dialogMessagePublisher.publish(message.externalRefId, "")
+    }
+
+    private fun List<MessageState>.withLogging(): List<MessageState> {
+        log.info { "Polling messages: found $size pollable messages" }
+        return this
     }
 }
