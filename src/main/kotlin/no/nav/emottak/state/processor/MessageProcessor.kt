@@ -41,7 +41,7 @@ class MessageProcessor(
         val (metadata, errorMessage) = ediAdapterClient.postMessage(postMessageRequest)
 
         if (errorMessage != null) {
-            log.error { errorMessage }
+            log.error { "Received error when processing dialog message: $errorMessage" }
             return
         }
 
