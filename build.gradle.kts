@@ -88,5 +88,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("no.nav.emottak.state.AppKt")
+    mainClass.set("no.nav.helsemelding.state.AppKt")
 }

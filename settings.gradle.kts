@@ -129,4 +129,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "emottak-state-service"
+rootProject.name = "helsemelding-state-service"

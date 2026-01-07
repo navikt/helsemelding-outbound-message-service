@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  MODULE_NAME: "emottak-state-service"
+  MODULE_NAME: "helsemelding-state-service"
   NAIS_MANIFEST: "state-service-dev.yaml"
 
 jobs:

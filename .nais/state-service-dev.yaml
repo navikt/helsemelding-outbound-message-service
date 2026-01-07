@@ -2,9 +2,9 @@ apiVersion: "nais.io/v1alpha1"
 kind: "Application"
 metadata:
   name: "state-service"
-  namespace: "team-emottak"
+  namespace: "team-helsemelding"
   labels:
-    "team": "team-emottak"
+    "team": "team-helsemelding"
   annotations:
     texas.nais.io/enabled: "true"
 spec:
