@@ -1,7 +1,5 @@
 package no.nav.helsemelding.state.service
 
-import arrow.core.Either.Left
-import arrow.core.Either.Right
 import arrow.core.raise.recover
 import arrow.fx.coroutines.parMap
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -18,7 +16,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onCompletion
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
-import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.StatusInfo
 import no.nav.helsemelding.state.StateError
 import no.nav.helsemelding.state.config

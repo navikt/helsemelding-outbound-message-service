@@ -1,7 +1,5 @@
 package no.nav.helsemelding.state.processor
 
-import arrow.core.Either.Left
-import arrow.core.Either.Right
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import kotlinx.coroutines.Dispatchers
@@ -9,7 +7,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
-import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
 import no.nav.helsemelding.state.model.CreateState
