@@ -20,3 +20,6 @@ spec:
     - access: readwrite
       application: state-service
       team: team-helsemelding
+    - access: write
+      application: message-generator
+      team: team-helsemelding
