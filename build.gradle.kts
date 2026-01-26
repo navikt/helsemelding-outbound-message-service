@@ -52,7 +52,6 @@ dependencies {
     implementation(libs.bundles.prometheus)
     implementation(libs.hoplite.core)
     implementation(libs.hoplite.hocon)
-    implementation(libs.kotlin.kafka)
     implementation(libs.jwt)
     implementation(libs.nimbus.jwt)
     implementation(libs.ktor.client.auth)
