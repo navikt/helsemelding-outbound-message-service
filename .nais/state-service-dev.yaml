@@ -71,6 +71,8 @@ spec:
       rules:
         - application: edi-adapter
           cluster: dev-gcp
+        - application: payload-signing-service
+          cluster: dev-gcp
     inbound:
       rules:
         - application: azure-token-generator
