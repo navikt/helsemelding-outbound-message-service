@@ -93,7 +93,7 @@ data class Kafka(
 fun Config.withKafka(update: Kafka.() -> Kafka) = copy(kafka = kafka.update())
 
 data class KafkaTopics(
-    val dialogMessage: String
+    val dialogMessageOut: String
 )
 
 data class Server(

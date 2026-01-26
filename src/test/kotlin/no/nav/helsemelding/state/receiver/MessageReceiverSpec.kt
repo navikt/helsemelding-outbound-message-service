@@ -38,7 +38,7 @@ class MessageReceiverSpec : KafkaSpec(
                     publisher.publishScope {
                         publish(
                             ProducerRecord(
-                                config.kafkaTopics.dialogMessage,
+                                config.kafkaTopics.dialogMessageOut,
                                 referenceId.toString(),
                                 content
                             )
