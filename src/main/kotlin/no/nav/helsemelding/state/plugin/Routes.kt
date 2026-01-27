@@ -9,6 +9,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.micrometer.prometheus.PrometheusMeterRegistry
+import io.opentelemetry.api.trace.Span
 import io.opentelemetry.instrumentation.annotations.SpanAttribute
 import io.opentelemetry.instrumentation.annotations.WithSpan
 import no.nav.helsemelding.payloadsigning.client.HttpPayloadSigningClient
@@ -73,11 +74,15 @@ fun Route.internalRoutes(
         val messageSnapshot = messageStateService.getMessageSnapshot(Uuid.random())
 
         // 3
+        // Logg a value
+        Span.current().setAttribute("message.log.key1", "value1")
+
+        // 4
         // Call a method
         val newMessageState = updateMessageState(Uuid.random(), MessageDeliveryState.COMPLETED)
 
-        // 4
-        // throw exception
+        // 5
+        // Throw exception
         try {
             unsafeOperation()
         } catch (e: Exception) {
@@ -93,6 +98,8 @@ fun updateMessageState(
     @SpanAttribute("message.id") messageId: Uuid,
     @SpanAttribute("message.state.value") state: MessageDeliveryState
 ): String {
+    Span.current().setAttribute("message.log.key2", "value2")
+
     return "New state for message $messageId is $state"
 }
 
