@@ -75,6 +75,7 @@ dependencies {
     implementation(libs.token.validation.ktor.v3)
     implementation(libs.edi.adapter.client)
     implementation("io.opentelemetry.instrumentation:opentelemetry-logback-mdc-1.0:2.16.0-alpha")
+    implementation("io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations:1.33.0")
     implementation("no.nav.helsemelding:payload-signing-client:0.0.1")
 
     testImplementation(testLibs.bundles.kotest)
