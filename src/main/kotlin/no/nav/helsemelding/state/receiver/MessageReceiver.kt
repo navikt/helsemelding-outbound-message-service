@@ -14,10 +14,10 @@ import kotlin.uuid.Uuid
 class MessageReceiver(
     private val kafkaReceiver: KafkaReceiver<String, ByteArray>
 ) {
-    private val kafka = config().kafkaTopics
+    private val kafka = config().kafka.topics
 
     fun receiveMessages(): Flow<DialogMessage> = kafkaReceiver
-        .receive(kafka.dialogMessage)
+        .receive(kafka.dialogMessageOut)
         .map(::toMessage)
 
     private suspend fun toMessage(record: ReceiverRecord<String, ByteArray>): DialogMessage {

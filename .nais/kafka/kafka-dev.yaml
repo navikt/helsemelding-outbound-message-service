@@ -2,9 +2,9 @@ apiVersion: kafka.nais.io/v1
 kind: Topic
 metadata:
   labels:
-    team: team-helsemelding
-  name: dialog.ebxml.payload
-  namespace: team-helsemelding
+    team: helsemelding
+  name: dialog.out.xml
+  namespace: helsemelding
 spec:
   pool: nav-dev
   config:
@@ -19,4 +19,7 @@ spec:
   acl:
     - access: readwrite
       application: state-service
-      team: team-helsemelding
+      team: helsemelding
+    - access: write
+      application: message-generator
+      team: helsemelding
