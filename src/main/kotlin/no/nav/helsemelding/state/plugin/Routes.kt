@@ -84,7 +84,6 @@ fun Route.internalRoutes(
             log.error("That is the plan", e)
         }
 
-
         call.respond(HttpStatusCode.OK)
     }
 }
