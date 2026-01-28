@@ -37,7 +37,7 @@ class MessageProcessorSpec : StringSpec(
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
 
             val dialogMessage = DialogMessage(uuid, "data".toByteArray())
-            messageProcessor.processAndSendMessage(this, dialogMessage)
+            messageProcessor.processAndSendMessage(this, dialogMessage).join()
 
             val messageSnapshot = messageStateService.getMessageSnapshot(uuid)
             messageSnapshot.shouldNotBeNull()
@@ -69,7 +69,7 @@ class MessageProcessorSpec : StringSpec(
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
 
             val dialogMessage = DialogMessage(uuid, "data".toByteArray())
-            messageProcessor.processAndSendMessage(this, dialogMessage)
+            messageProcessor.processAndSendMessage(this, dialogMessage).join()
 
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
         }
