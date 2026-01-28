@@ -2,10 +2,13 @@ package no.nav.helsemelding.state.processor
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
@@ -25,15 +28,16 @@ class MessageProcessor(
     private val messageStateService: MessageStateService,
     private val ediAdapterClient: EdiAdapterClient
 ) {
-    fun processMessages() =
+    fun processMessages(scope: CoroutineScope) =
         messageFlow()
-            .onEach { message -> processAndSendMessage(message) }
+            .onEach { message -> processAndSendMessage(scope, message) }
             .flowOn(Dispatchers.IO)
+            .launchIn(scope)
 
     private fun messageFlow(): Flow<DialogMessage> =
         messageReceiver.receiveMessages()
 
-    internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
+    internal fun processAndSendMessage(scope: CoroutineScope, dialogMessage: DialogMessage) = scope.launch {
         val postMessageRequest = PostMessageRequest(
             businessDocument = dialogMessage.toString(),
             contentType = ContentType.Application.Xml.toString(),
