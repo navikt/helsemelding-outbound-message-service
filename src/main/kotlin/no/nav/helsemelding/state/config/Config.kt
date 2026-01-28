@@ -113,6 +113,7 @@ data class EdiAdapter(
 
 data class Poller(
     val fetchLimit: Int,
+    val batchSize: Int,
     val minAgeSeconds: Duration,
     val scheduleInterval: Duration
 )

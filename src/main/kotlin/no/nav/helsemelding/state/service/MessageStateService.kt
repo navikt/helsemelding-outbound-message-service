@@ -68,11 +68,11 @@ interface MessageStateService {
     suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot?
 
     /**
-     * Finds messages that are candidates for polling against the external system.
+     * Returns messages that are candidates for polling against the external system.
      *
      * A message is considered *pollable* when:
      *
-     * 1. Its external delivery state indicates that processing is still in progress:
+     * 1. Its external delivery state indicates that the external processing is still in progress:
      *    - `externalDeliveryState` is `null` (initial NEW state), or
      *    - `externalDeliveryState` is `ACKNOWLEDGED` or `UNCONFIRMED` (PENDING states).
      *
@@ -81,17 +81,25 @@ interface MessageStateService {
      *    are **never** polled again.
      *
      * 3. The message has either never been polled before (`lastPolledAt` is `null`),
-     *    or the last poll occurred sufficiently long ago, as determined by
-     *    [PollerConfig.minAgeSeconds]. This throttling prevents excessive repeated polling
-     *    of the same in-progress messages.
+     *    or it was last polled sufficiently long ago, as defined by
+     *    [PollerConfig.minAgeSeconds]. This prevents repeatedly hammering the same
+     *    in-progress messages.
      *
-     * The result set is additionally constrained by the configured fetch limit
-     * ([PollerConfig.fetchLimit]) to balance polling throughput and load on both
-     * this service and the external system.
+     * The query is additionally restricted by [PollerConfig.fetchLimit], which defines
+     * the maximum number of messages returned in a single polling cycle. This bound
+     * controls database load and provides predictable throughput when many messages
+     * are in an in-progress state.
+     *
+     * Note that `fetchLimit` only determines how many messages are *fetched* from the
+     * database. Polling and write-back are performed in smaller logical units based on
+     * [PollerConfig.batchSize], which controls how many messages are processed and
+     * marked as polled at a time. This allows tuning of external load (e.g., NHN)
+     * independently of database fetch size.
      *
      * Default configuration values:
-     * - `minAgeSeconds`: 30 seconds — a message must be at least this old since it was last polled.
-     * - `fetchLimit`: 100 messages — the maximum number of messages processed per polling cycle.
+     * - `minAgeSeconds`: 30 seconds — minimum age since last poll.
+     * - `fetchLimit`: 200 messages — maximum number fetched per cycle.
+     * - `batchSize`: 25 messages — number processed per batch.
      *
      * These defaults can be overridden through application configuration or environment variables.
      *

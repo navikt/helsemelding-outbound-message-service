@@ -3,18 +3,7 @@ package no.nav.helsemelding.state.service
 import arrow.core.raise.recover
 import arrow.fx.coroutines.parMap
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.chunked
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.flatMapConcat
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onCompletion
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.StatusInfo
 import no.nav.helsemelding.state.StateError
@@ -46,74 +35,109 @@ class PollerService(
 ) {
     private val pollerConfig = config().poller
 
-    fun pollMessages(scope: CoroutineScope): Job =
-        pollableMessages()
-            .chunked(pollerConfig.fetchLimit)
-            .parMap { currentBatch ->
-                currentBatch.parMap(Dispatchers.IO) { pollAndProcessMessage(it) }
-                val marked = messageStateService.markAsPolled(currentBatch.map { it.externalRefId })
-                log.debug { "$marked messages marked as polled" }
-            }
-            .launchIn(scope)
+    suspend fun pollMessages() {
+        log.info { "=== Poll cycle start ===" }
+        val cycleStart = System.currentTimeMillis()
 
-    internal suspend fun pollAndProcessMessage(message: MessageState) = with(stateEvaluatorService) {
-        val externalRefId = message.externalRefId
-        ediAdapterClient.getMessageStatus(externalRefId)
-            .onRight { statusInfos -> processMessage(statusInfos, message) }
-            .onLeft { errorMessage -> log.error { errorMessage } }
+        messageStateService
+            .findPollableMessages()
+            .withLogging()
+            .takeIf { it.isNotEmpty() }
+            ?.chunked(pollerConfig.batchSize)
+            ?.forEach { processBatch(it) }
+
+        log.info { "=== Poll cycle end: ${System.currentTimeMillis() - cycleStart}ms ===" }
+    }
+
+    internal suspend fun pollAndProcessMessage(message: MessageState) =
+        with(stateEvaluatorService) {
+            message.debug { "Fetching status from EdiAdapter" }
+
+            ediAdapterClient.getMessageStatus(message.externalRefId)
+                .onRight { statuses ->
+                    message.debug { "Received ${statuses.size} statuses" }
+                    processMessage(statuses, message)
+                }
+                .onLeft { err ->
+                    message.error { "Error fetching status: $err" }
+                }
+        }
+
+    private suspend fun processBatch(batch: List<MessageState>) {
+        val summary = batch.batchSummary()
+        log.info { "processing $summary" }
+
+        logBatchDuration(summary) {
+            batch.parMap(Dispatchers.IO) { pollAndProcessMessage(it) }
+
+            val marked = messageStateService.markAsPolled(batch.map { it.externalRefId })
+            log.debug { "markedAsPolled=$marked ($summary)" }
+        }
     }
 
     private suspend fun processMessage(
         externalStatuses: List<StatusInfo>?,
         message: MessageState
     ) {
-        val externalStatus = externalStatuses!!.last().translate()
+        val lastStatus = when (val lastExternal = externalStatuses?.lastOrNull()) {
+            null -> {
+                message.warn { "No status info returned from adapter" }
+                return
+            }
 
+            else -> lastExternal
+        }
+
+        message.debug { "Processing translated status: $lastStatus" }
+
+        val externalStatus = lastStatus.translate()
         val deliveryState = externalStatus.deliveryState
         val appRecStatus = externalStatus.appRecStatus
 
+        message.debug { "Translated: deliveryState=$deliveryState, appRecStatus=$appRecStatus" }
+
         val nextState = determineNextState(message, deliveryState, appRecStatus)
+
+        message.debug { "Determining next state: old=${message.externalDeliveryState}, new=$nextState" }
+
         when (nextState) {
-            NEW -> log.debug { message.formatUnchanged(NEW) }
+            NEW -> message.debug { message.formatUnchanged(NEW) }
             PENDING -> pending(message, deliveryState, appRecStatus)
             COMPLETED -> completed(message, deliveryState, appRecStatus)
             REJECTED -> rejected(message, deliveryState, appRecStatus)
-            INVALID -> log.error { message.formatInvalidState() }
+            INVALID -> message.error { message.formatInvalidState() }
         }
     }
-
-    private fun pollableMessages(): Flow<MessageState> =
-        flow { emit(messageStateService.findPollableMessages().withLogging()) }
-            .flatMapConcat { currentBatch ->
-                if (currentBatch.isEmpty()) {
-                    emptyFlow()
-                } else {
-                    currentBatch.asFlow().onCompletion { emitAll(pollableMessages()) }
-                }
-            }
 
     private fun determineNextState(
         message: MessageState,
         externalDeliveryState: ExternalDeliveryState?,
         appRecStatus: AppRecStatus?
-    ): MessageDeliveryState = with(stateEvaluatorService) {
-        recover({
-            val oldState = evaluate(message)
-            val newState = evaluate(externalDeliveryState, appRecStatus)
+    ): MessageDeliveryState =
+        with(stateEvaluatorService) {
+            recover({
+                val oldState = evaluate(message)
+                val newState = evaluate(externalDeliveryState, appRecStatus)
 
-            determineNextState(oldState, newState)
-        }) { e: StateError ->
-            log.error { e.withMessageContext(message) }
-            INVALID
+                message.debug {
+                    "State evaluation: old=$oldState, new=$newState"
+                }
+
+                determineNextState(oldState, newState)
+            }) { e: StateError ->
+                message.error {
+                    "Failed evaluating state: ${e.withMessageContext(message)}"
+                }
+                INVALID
+            }
         }
-    }
 
     private suspend fun pending(
         message: MessageState,
         newState: ExternalDeliveryState,
         newAppRecStatus: AppRecStatus?
     ) {
-        log.info { message.formatTransition(PENDING) }
+        message.info { message.formatTransition(PENDING) }
         messageStateService.recordStateChange(
             UpdateState(
                 message.messageType,
@@ -131,7 +155,7 @@ class PollerService(
         newState: ExternalDeliveryState,
         newAppRecStatus: AppRecStatus?
     ) {
-        log.info { message.formatTransition(COMPLETED) }
+        message.info { message.formatTransition(COMPLETED) }
         messageStateService.recordStateChange(
             UpdateState(
                 message.messageType,
@@ -142,6 +166,8 @@ class PollerService(
                 newAppRecStatus
             )
         )
+
+        message.info { "Publishing COMPLETED notification" }
         dialogMessagePublisher.publish(message.externalRefId, newAppRecStatus!!.name)
     }
 
@@ -150,7 +176,7 @@ class PollerService(
         newState: ExternalDeliveryState,
         newAppRecStatus: AppRecStatus?
     ) {
-        log.warn { message.formatTransition(REJECTED) }
+        message.warn { message.formatTransition(REJECTED) }
         messageStateService.recordStateChange(
             UpdateState(
                 message.messageType,
@@ -161,12 +187,40 @@ class PollerService(
                 newAppRecStatus
             )
         )
-        // should publish rejections to its own topic!
+
+        message.warn { "Publishing REJECTED notification" }
         dialogMessagePublisher.publish(message.externalRefId, "")
     }
 
-    private fun List<MessageState>.withLogging(): List<MessageState> {
-        log.info { "Polling messages: found $size pollable messages" }
-        return this
+    private fun List<MessageState>.withLogging(): List<MessageState> = also {
+        log.info { "Pollable messages size=$size" }
+    }
+
+    private inline fun MessageState.debug(crossinline msg: () -> String) =
+        log.debug { "externalRefId=$externalRefId ${msg()}" }
+
+    private inline fun MessageState.info(crossinline msg: () -> String) =
+        log.info { "externalRefId=$externalRefId ${msg()}" }
+
+    private inline fun MessageState.warn(crossinline msg: () -> String) =
+        log.warn { "externalRefId=$externalRefId ${msg()}" }
+
+    private inline fun MessageState.error(crossinline msg: () -> String) =
+        log.error { "externalRefId=$externalRefId ${msg()}" }
+
+    private fun List<MessageState>.batchSummary(): String =
+        when (size) {
+            0 -> "batchSize=0"
+            1 -> "batchSize=1 externalRefId=${first().externalRefId}"
+            else -> "batchSize=$size range=${first().externalRefId}..${last().externalRefId}"
+        }
+
+    private inline fun <T> logBatchDuration(summary: String, block: () -> T): T {
+        val start = System.currentTimeMillis()
+        return try {
+            block()
+        } finally {
+            log.info { "batch completed: $summary took ${System.currentTimeMillis() - start}ms" }
+        }
     }
 }

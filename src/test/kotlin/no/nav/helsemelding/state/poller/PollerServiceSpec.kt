@@ -24,6 +24,54 @@ import no.nav.helsemelding.ediadapter.model.AppRecStatus as ExternalAppRecStatus
 
 class PollerServiceSpec : StringSpec(
     {
+        "Mark polled messages → not pollable on next run" {
+            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+
+            val ref1 = Uuid.random()
+            val ref2 = Uuid.random()
+            val url = URI("http://example.com/1").toURL()
+
+            messageStateService.createInitialState(CreateState(DIALOG, ref1, url))
+            messageStateService.createInitialState(CreateState(DIALOG, ref2, url))
+
+            ediAdapterClient.givenStatus(ref1, DeliveryState.ACKNOWLEDGED, null)
+            ediAdapterClient.givenStatus(ref2, DeliveryState.ACKNOWLEDGED, null)
+
+            pollerService.pollMessages()
+            pollerService.pollMessages()
+
+            dialogMessagePublisher.published shouldBe emptyList()
+            messageStateService.findPollableMessages() shouldBe emptyList()
+        }
+
+        "No pollable messages → do nothing" {
+            val (_, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+
+            pollerService.pollMessages()
+
+            messageStateService.findPollableMessages() shouldBe emptyList()
+
+            dialogMessagePublisher.published shouldBe emptyList()
+        }
+
+        "No status list → no state change and no publish" {
+            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+
+            val externalRefId = Uuid.random()
+            val externalUrl = URI("http://example.com/1").toURL()
+
+            val snapshot = messageStateService.createInitialState(CreateState(DIALOG, externalRefId, externalUrl))
+
+            ediAdapterClient.givenStatusList(externalRefId, emptyList())
+
+            pollerService.pollAndProcessMessage(snapshot.messageState)
+
+            val current = messageStateService.getMessageSnapshot(externalRefId)!!
+            current.messageState.externalDeliveryState shouldBe null
+            current.messageState.appRecStatus shouldBe null
+            dialogMessagePublisher.published shouldBe emptyList()
+        }
+
         "No state change → no publish" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 

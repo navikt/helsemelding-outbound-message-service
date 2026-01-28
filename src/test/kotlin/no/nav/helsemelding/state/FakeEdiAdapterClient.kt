@@ -48,6 +48,13 @@ class FakeEdiAdapterClient : EdiAdapterClient {
         )
     }
 
+    fun givenStatusList(
+        id: Uuid,
+        list: List<StatusInfo>?
+    ) {
+        messageStatusById[id] = Right(list ?: emptyList())
+    }
+
     fun givenStatusError(
         id: Uuid,
         error: ErrorMessage

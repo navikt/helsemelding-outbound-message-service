@@ -3,7 +3,6 @@ package no.nav.helsemelding.state
 import arrow.continuations.SuspendApp
 import arrow.continuations.ktor.server
 import arrow.core.raise.result
-import arrow.fx.coroutines.ResourceScope
 import arrow.fx.coroutines.resourceScope
 import arrow.resilience.Schedule
 import io.github.nomisRev.kafka.publisher.KafkaPublisher
@@ -14,7 +13,6 @@ import io.ktor.server.netty.Netty
 import io.ktor.utils.io.CancellationException
 import io.micrometer.prometheus.PrometheusMeterRegistry
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.currentCoroutineContext
 import no.nav.helsemelding.state.evaluator.StateEvaluator
 import no.nav.helsemelding.state.evaluator.StateTransitionValidator
 import no.nav.helsemelding.state.plugin.configureMetrics
@@ -80,11 +78,10 @@ internal fun stateServiceModule(
     }
 }
 
-private suspend fun ResourceScope.schedulePoller(pollerService: PollerService): Long {
-    val scope = coroutineScope(currentCoroutineContext())
+private suspend fun schedulePoller(pollerService: PollerService): Long {
     return Schedule
         .spaced<Unit>(config().poller.scheduleInterval)
-        .repeat { pollerService.pollMessages(scope) }
+        .repeat { pollerService::pollMessages }
 }
 
 private fun logError(t: Throwable) = log.error { "Shutdown state-service due to: ${t.stackTraceToString()}" }
