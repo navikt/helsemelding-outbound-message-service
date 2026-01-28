@@ -9,6 +9,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.micrometer.prometheus.PrometheusMeterRegistry
+import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.instrumentation.annotations.SpanAttribute
 import io.opentelemetry.instrumentation.annotations.WithSpan
@@ -86,8 +87,15 @@ fun Route.internalRoutes(
         try {
             unsafeOperation()
         } catch (e: Exception) {
-            log.error("That is the plan", e)
+            // Just go on
         }
+
+        // 6
+        // Use custom tracer
+        val otel = GlobalOpenTelemetry.get()
+        val tracer = otel.getTracer("custom.operation")
+        val span = tracer.spanBuilder("message.custom.operation").startSpan()
+        span.setAttribute("message.custom.operation.key1", "value1")
 
         call.respond(HttpStatusCode.OK)
     }
