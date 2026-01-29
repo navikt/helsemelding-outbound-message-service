@@ -49,6 +49,18 @@ class PollerService(
         log.info { "=== Poll cycle end: ${System.currentTimeMillis() - cycleStart}ms ===" }
     }
 
+    private suspend fun processBatch(batch: List<MessageState>) {
+        val summary = batch.batchSummary()
+        log.info { "processing $summary" }
+
+        logBatchDuration(summary) {
+            batch.parMap(Dispatchers.IO) { pollAndProcessMessage(it) }
+
+            val marked = messageStateService.markAsPolled(batch.map { it.externalRefId })
+            log.debug { "markedAsPolled=$marked ($summary)" }
+        }
+    }
+
     internal suspend fun pollAndProcessMessage(message: MessageState) =
         with(stateEvaluatorService) {
             message.debug { "Fetching status from EdiAdapter" }
@@ -62,18 +74,6 @@ class PollerService(
                     message.error { "Error fetching status: $err" }
                 }
         }
-
-    private suspend fun processBatch(batch: List<MessageState>) {
-        val summary = batch.batchSummary()
-        log.info { "processing $summary" }
-
-        logBatchDuration(summary) {
-            batch.parMap(Dispatchers.IO) { pollAndProcessMessage(it) }
-
-            val marked = messageStateService.markAsPolled(batch.map { it.externalRefId })
-            log.debug { "markedAsPolled=$marked ($summary)" }
-        }
-    }
 
     private suspend fun processMessage(
         externalStatuses: List<StatusInfo>?,
