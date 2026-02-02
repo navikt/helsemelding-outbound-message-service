@@ -16,11 +16,15 @@ import no.nav.helsemelding.state.model.MessageDeliveryState.INVALID
 import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
+import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
 import no.nav.helsemelding.state.model.MessageState
 import no.nav.helsemelding.state.model.UpdateState
+import no.nav.helsemelding.state.model.formatExternal
 import no.nav.helsemelding.state.model.formatInvalidState
+import no.nav.helsemelding.state.model.formatNew
 import no.nav.helsemelding.state.model.formatTransition
 import no.nav.helsemelding.state.model.formatUnchanged
+import no.nav.helsemelding.state.model.logPrefix
 import no.nav.helsemelding.state.publisher.MessagePublisher
 import no.nav.helsemelding.state.util.translate
 import no.nav.helsemelding.state.withMessageContext
@@ -63,16 +67,14 @@ class PollerService(
 
     internal suspend fun pollAndProcessMessage(message: MessageState) =
         with(stateEvaluatorService) {
-            message.debug { "Fetching status from EdiAdapter" }
+            log.debug { "${message.logPrefix()} Fetching status from EDI Adapter" }
 
             ediAdapterClient.getMessageStatus(message.externalRefId)
                 .onRight { statuses ->
-                    message.debug { "Received ${statuses.size} statuses" }
+                    log.debug { "${message.logPrefix()} Received ${statuses.size} statuses" }
                     processMessage(statuses, message)
                 }
-                .onLeft { err ->
-                    message.error { "Error fetching status: $err" }
-                }
+                .onLeft { error -> log.error { "${message.logPrefix()} Error fetching status: $error" } }
         }
 
     private suspend fun processMessage(
@@ -81,31 +83,32 @@ class PollerService(
     ) {
         val lastStatus = when (val lastExternal = externalStatuses?.lastOrNull()) {
             null -> {
-                message.warn { "No status info returned from adapter" }
+                log.warn { "${message.logPrefix()} No status info returned from EDI Adapter" }
                 return
             }
 
             else -> lastExternal
         }
 
-        message.debug { "Processing translated status: $lastStatus" }
+        log.debug { "${message.logPrefix()} Processing translated status: $lastStatus" }
 
         val externalStatus = lastStatus.translate()
         val deliveryState = externalStatus.deliveryState
         val appRecStatus = externalStatus.appRecStatus
 
-        message.debug { "Translated: deliveryState=$deliveryState, appRecStatus=$appRecStatus" }
+        log.debug { message.formatExternal(deliveryState, appRecStatus) }
 
         val nextState = determineNextState(message, deliveryState, appRecStatus)
 
-        message.debug { "Determining next state: old=${message.externalDeliveryState}, new=$nextState" }
+        log.debug { "${message.logPrefix()} Next state decision: $nextState" }
 
         when (nextState) {
-            NEW -> message.debug { message.formatUnchanged(NEW) }
+            UNCHANGED -> log.debug { message.formatUnchanged() }
+            NEW -> log.debug { message.formatNew() }
             PENDING -> pending(message, deliveryState, appRecStatus)
             COMPLETED -> completed(message, deliveryState, appRecStatus)
             REJECTED -> rejected(message, deliveryState, appRecStatus)
-            INVALID -> message.error { message.formatInvalidState() }
+            INVALID -> log.error { message.formatInvalidState() }
         }
     }
 
@@ -119,13 +122,11 @@ class PollerService(
                 val oldState = evaluate(message)
                 val newState = evaluate(externalDeliveryState, appRecStatus)
 
-                message.debug {
-                    "State evaluation: old=$oldState, new=$newState"
-                }
+                log.debug { "${message.logPrefix()} Evaluated state: old=$oldState, new=$newState" }
 
                 determineNextState(oldState, newState)
             }) { e: StateError ->
-                message.error {
+                log.error {
                     "Failed evaluating state: ${e.withMessageContext(message)}"
                 }
                 INVALID
@@ -137,7 +138,7 @@ class PollerService(
         newState: ExternalDeliveryState,
         newAppRecStatus: AppRecStatus?
     ) {
-        message.info { message.formatTransition(PENDING) }
+        log.info { message.formatTransition(PENDING) }
         messageStateService.recordStateChange(
             UpdateState(
                 message.messageType,
@@ -155,7 +156,7 @@ class PollerService(
         newState: ExternalDeliveryState,
         newAppRecStatus: AppRecStatus?
     ) {
-        message.info { message.formatTransition(COMPLETED) }
+        log.info { message.formatTransition(COMPLETED) }
         messageStateService.recordStateChange(
             UpdateState(
                 message.messageType,
@@ -167,7 +168,6 @@ class PollerService(
             )
         )
 
-        message.info { "Publishing COMPLETED notification" }
         dialogMessagePublisher.publish(message.externalRefId, newAppRecStatus!!.name)
     }
 
@@ -176,7 +176,7 @@ class PollerService(
         newState: ExternalDeliveryState,
         newAppRecStatus: AppRecStatus?
     ) {
-        message.warn { message.formatTransition(REJECTED) }
+        log.warn { message.formatTransition(REJECTED) }
         messageStateService.recordStateChange(
             UpdateState(
                 message.messageType,
@@ -188,7 +188,6 @@ class PollerService(
             )
         )
 
-        message.warn { "Publishing REJECTED notification" }
         dialogMessagePublisher.publish(message.externalRefId, "")
     }
 
@@ -196,23 +195,11 @@ class PollerService(
         log.info { "Pollable messages size=$size" }
     }
 
-    private inline fun MessageState.debug(crossinline msg: () -> String) =
-        log.debug { "externalRefId=$externalRefId ${msg()}" }
-
-    private inline fun MessageState.info(crossinline msg: () -> String) =
-        log.info { "externalRefId=$externalRefId ${msg()}" }
-
-    private inline fun MessageState.warn(crossinline msg: () -> String) =
-        log.warn { "externalRefId=$externalRefId ${msg()}" }
-
-    private inline fun MessageState.error(crossinline msg: () -> String) =
-        log.error { "externalRefId=$externalRefId ${msg()}" }
-
     private fun List<MessageState>.batchSummary(): String =
         when (size) {
             0 -> "batchSize=0"
             1 -> "batchSize=1 externalRefId=${first().externalRefId}"
-            else -> "batchSize=$size range=${first().externalRefId}..${last().externalRefId}"
+            else -> "batchSize=$size first=${first().externalRefId} last=${last().externalRefId}"
         }
 
     private inline fun <T> logBatchDuration(summary: String, block: () -> T): T {

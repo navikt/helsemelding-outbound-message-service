@@ -17,15 +17,17 @@ data class MessageState(
     val updatedAt: Instant
 )
 
-fun MessageState.formatUnchanged(state: MessageDeliveryState): String = "${logPrefix()} unchanged ($state)"
+fun MessageState.formatUnchanged(): String = "${logPrefix()} No state transition (no persisted change)"
+
+fun MessageState.formatNew(): String = "${logPrefix()} Initial internal state: NEW (no external status received yet)"
 
 fun MessageState.formatTransition(to: MessageDeliveryState): String = "${logPrefix()} → $to"
 
-fun MessageState.formatInvalidState(): String = "${logPrefix()} entered INVALID state"
+fun MessageState.formatInvalidState(): String = "${logPrefix()} Entered INVALID state"
 
 fun MessageState.formatExternal(
     newState: ExternalDeliveryState?,
     newAppRecStatus: AppRecStatus?
 ): String = "${logPrefix()} externalUpdate(delivery=$newState, appRec=$newAppRecStatus)"
 
-private fun MessageState.logPrefix(): String = "Message $externalRefId"
+fun MessageState.logPrefix(): String = "Message(type=$messageType, ref=$externalRefId)"
