@@ -8,6 +8,7 @@ import no.nav.helsemelding.state.evaluator.StateTransitionValidator
 import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.ExternalDeliveryState
 import no.nav.helsemelding.state.model.MessageDeliveryState
+import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
 import no.nav.helsemelding.state.model.MessageState
 
 class StateEvaluatorService(
@@ -33,6 +34,6 @@ class StateEvaluatorService(
     ): MessageDeliveryState =
         with(transitionValidator) {
             validate(oldState, newState)
-            newState
+            if (oldState != newState) newState else UNCHANGED
         }
 }

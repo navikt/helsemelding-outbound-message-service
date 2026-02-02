@@ -6,6 +6,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import no.nav.helsemelding.state.StateEvaluationError
 import no.nav.helsemelding.state.model.AppRecStatus
+import no.nav.helsemelding.state.model.AppRecStatus.OK_ERROR_IN_MESSAGE_PART
 import no.nav.helsemelding.state.model.ExternalDeliveryState
 import no.nav.helsemelding.state.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.state.model.ExternalDeliveryState.UNCONFIRMED
@@ -45,7 +46,7 @@ class StateEvaluatorSpec : StringSpec(
 
         "ACK delivery + OK_ERROR_IN_MESSAGE_PART apprec → COMPLETED" {
             either {
-                with(evaluator) { evaluate(ACKNOWLEDGED, AppRecStatus.OK_ERROR_IN_MESSAGE_PART) }
+                with(evaluator) { evaluate(ACKNOWLEDGED, OK_ERROR_IN_MESSAGE_PART) }
             } shouldBe Right(COMPLETED)
         }
 
@@ -72,6 +73,14 @@ class StateEvaluatorSpec : StringSpec(
         "UNCONFIRMED delivery + REJECTED apprec → Unresolvable" {
             val result = either {
                 with(evaluator) { evaluate(UNCONFIRMED, AppRecStatus.REJECTED) }
+            }
+
+            result shouldBeLeftWhere { it is StateEvaluationError.UnresolvableState }
+        }
+
+        "UNCONFIRMED delivery + OK_ERROR_IN_MESSAGE_PART apprec → Unresolvable" {
+            val result = either {
+                with(evaluator) { evaluate(UNCONFIRMED, OK_ERROR_IN_MESSAGE_PART) }
             }
 
             result shouldBeLeftWhere { it is StateEvaluationError.UnresolvableState }

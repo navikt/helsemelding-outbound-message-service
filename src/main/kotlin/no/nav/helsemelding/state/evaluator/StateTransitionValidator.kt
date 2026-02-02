@@ -18,10 +18,20 @@ import no.nav.helsemelding.state.model.MessageDeliveryState
  * transitions to be raised as {@link StateTransitionError.IllegalTransition}
  * without throwing exceptions and without mixing side effects.
  *
+ * ## Special Case: UNCHANGED
+ *
+ * `UNCHANGED` is **not** a domain state. It is an internal control signal used
+ * by the state machine to indicate that:
+ *
+ * > the evaluated `new` state is identical to the previously persisted `old` state.
+ *
+ * Since no transition is being attempted, `UNCHANGED` bypasses all validation
+ * rules and is always permitted.
+ *
  * ## Allowed Transitions
  *
  * - **NEW → ANY**
- *   *Any* transition from NEW is allowed, since no external information
+ *   Any transition from NEW is allowed, since no external information
  *   has yet constrained the message state.
  *
  * - **PENDING → PENDING | COMPLETED | REJECTED**
@@ -52,7 +62,8 @@ import no.nav.helsemelding.state.model.MessageDeliveryState
  *   The previously persisted internal delivery state.
  *
  * @param new
- *   The newly computed internal delivery state.
+ *   The newly computed internal delivery state, or `UNCHANGED` if
+ *   no transition is being attempted.
  *
  * @throws StateTransitionError.IllegalTransition
  *   Raised through the [Raise] context if the transition from `old` to `new`
@@ -107,6 +118,8 @@ class StateTransitionValidator {
                     )
                 )
             }
+
+            MessageDeliveryState.UNCHANGED -> {}
         }
     }
 }
