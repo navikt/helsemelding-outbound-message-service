@@ -48,3 +48,28 @@ spec:
     - access: readwrite
       application: state-service
       team: helsemelding
+
+---
+
+apiVersion: kafka.nais.io/v1
+kind: Topic
+metadata:
+  labels:
+    team: helsemelding
+  name: dialog.status.json
+  namespace: helsemelding
+spec:
+  pool: nav-dev
+  config:
+    cleanupPolicy: delete
+    maxMessageBytes: 1048588
+    minimumInSyncReplicas: 2
+    partitions: 1
+    replication: 3
+    retentionBytes: -1
+    retentionHours: 168
+    segmentHours: 168
+  acl:
+    - access: readwrite
+      application: state-service
+      team: helsemelding
