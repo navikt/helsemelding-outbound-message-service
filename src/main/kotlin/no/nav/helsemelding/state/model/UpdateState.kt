@@ -5,8 +5,8 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 data class UpdateState(
-    val messageType: MessageType,
     val externalRefId: Uuid,
+    val messageType: MessageType,
     val oldDeliveryState: ExternalDeliveryState?,
     val newDeliveryState: ExternalDeliveryState?,
     val oldAppRecStatus: AppRecStatus?,

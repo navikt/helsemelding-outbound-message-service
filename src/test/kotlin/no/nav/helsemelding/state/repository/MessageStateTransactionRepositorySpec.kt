@@ -37,37 +37,40 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                     ExposedMessageStateHistoryRepository(database)
                 )
 
+                val id = Uuid.random()
                 val externalRefId = Uuid.random()
                 val url = URI.create(MESSAGE).toURL()
                 val now = Clock.System.now()
 
-                val snapshot = messageStateTransactionRepository.createInitialState(
+                val messageStateSnapshot = messageStateTransactionRepository.createInitialState(
                     CreateState(
-                        messageType = DIALOG,
+                        id = id,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         externalMessageUrl = url,
                         occurredAt = now
                     )
                 )
 
-                val messageState = snapshot.messageState
+                val messageState = messageStateSnapshot.messageState
 
-                messageState.messageType shouldBe DIALOG
+                messageState.id shouldBe id
                 messageState.externalRefId shouldBe externalRefId
+                messageState.messageType shouldBe DIALOG
                 messageState.externalMessageUrl shouldBe url
 
                 messageState.externalDeliveryState shouldBe null
                 messageState.appRecStatus shouldBe null
 
-                snapshot.messageStateChange.size shouldBe 1
-                val entry = snapshot.messageStateChange.first()
+                messageStateSnapshot.messageStateChanges.size shouldBe 1
+                val messageStateChange = messageStateSnapshot.messageStateChanges.first()
 
-                entry.messageId shouldBe externalRefId
-                entry.oldDeliveryState shouldBe null
-                entry.newDeliveryState shouldBe null
-                entry.oldAppRecStatus shouldBe null
-                entry.newAppRecStatus shouldBe null
-                entry.changedAt shouldBeInstant now
+                messageStateChange.messageId shouldBe externalRefId
+                messageStateChange.oldDeliveryState shouldBe null
+                messageStateChange.newDeliveryState shouldBe null
+                messageStateChange.oldAppRecStatus shouldBe null
+                messageStateChange.newAppRecStatus shouldBe null
+                messageStateChange.changedAt shouldBeInstant now
             }
         }
 
@@ -81,23 +84,25 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                     ExposedMessageStateHistoryRepository(database)
                 )
 
+                val id = Uuid.random()
                 val externalRefId = Uuid.random()
                 val externalMessageUrl = URI.create(MESSAGE).toURL()
                 val now = Clock.System.now()
 
                 messageStateTransactionRepository.createInitialState(
                     CreateState(
-                        messageType = DIALOG,
+                        id = id,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         externalMessageUrl = externalMessageUrl,
                         occurredAt = now
                     )
                 )
 
-                val snapshot = messageStateTransactionRepository.recordStateChange(
+                val messageStateSnapshot = messageStateTransactionRepository.recordStateChange(
                     UpdateState(
-                        messageType = DIALOG,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         oldDeliveryState = null,
                         newDeliveryState = ACKNOWLEDGED,
                         oldAppRecStatus = null,
@@ -106,18 +111,18 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                     )
                 )
 
-                snapshot.messageStateChange.size shouldBe 2
+                messageStateSnapshot.messageStateChanges.size shouldBe 2
 
-                val entry = snapshot.messageStateChange.last()
+                val messageStateChange = messageStateSnapshot.messageStateChanges.last()
 
-                entry.messageId shouldBe externalRefId
-                entry.oldDeliveryState shouldBe null
-                entry.newDeliveryState shouldBe ACKNOWLEDGED
+                messageStateChange.messageId shouldBe externalRefId
+                messageStateChange.oldDeliveryState shouldBe null
+                messageStateChange.newDeliveryState shouldBe ACKNOWLEDGED
 
-                entry.oldAppRecStatus shouldBe null
-                entry.newAppRecStatus shouldBe null
+                messageStateChange.oldAppRecStatus shouldBe null
+                messageStateChange.newAppRecStatus shouldBe null
 
-                entry.changedAt shouldBeInstant now
+                messageStateChange.changedAt shouldBeInstant now
             }
         }
 

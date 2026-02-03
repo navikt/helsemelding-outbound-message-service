@@ -16,20 +16,23 @@ interface MessageStateService {
     /**
      * Registers a newly accepted message and initializes its tracked external state.
      *
-     * This is called when the adapter confirms that a message has been created in the external
-     * system. At this stage, no external delivery information is available, so both the
-     * external delivery state and AppRecStatus are recorded as `null`. This provides a clean
-     * baseline before the poller begins retrieving real state from the external API.
+     * This is called after the adapter confirms that the message has been created in the
+     * external system (external reference ID + message URL received). At this point no delivery
+     * or AppRec information is available, so those fields are recorded as unknown (`null`)
+     * until the poller starts retrieving real state from the external API.
      *
-     * An initial history entry is also created so that the message’s lifecycle is tracked
-     * from a well-defined starting point.
+     * The provided message ID becomes the lifecycle identifier and is used to
+     * correlate all later status updates.
      *
-     * The operation is transactional — the message and its initial history entry are persisted
-     * atomically.
+     * An initial history entry is also created so that the message lifecycle begins from a
+     * well-defined starting point.
      *
-     * @param createState A value object containing the type of message, external reference,
-     *        external URL, and the timestamp at which the message was created.
-     * @return A [MessageStateSnapshot] containing the stored message and its initial history entry.
+     * The operation is transactional — the message row and its initial history entry are
+     * persisted atomically.
+     *
+     * @param createState Initial data for the message including the message ID, external reference ID,
+     *        message type, external message URL and creation timestamp.
+     * @return A [MessageStateSnapshot] containing the persisted message and its initial history entry.
      */
     suspend fun createInitialState(createState: CreateState): MessageStateSnapshot
 
@@ -48,8 +51,8 @@ interface MessageStateService {
      * The operation is transactional — the message update and its corresponding history
      * entry are committed atomically to ensure consistency.
      *
-     * @param updateState A value object containing the message type, external reference id,
-     *        previous and new external states, and the timestamp at which the change occurred.
+     * @param updateState A value object containing the external reference id, message type,
+     *        previous and new external states and the timestamp at which the change occurred.
      * @return A [MessageStateSnapshot] containing the updated message and its complete history.
      */
     suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot
@@ -62,7 +65,7 @@ interface MessageStateService {
      * and all previously recorded state transitions.
      *
      * @param messageId The unique identifier of the tracked message.
-     * @return A [MessageStateSnapshot] containing the message’s current state and full history,
+     * @return A [MessageStateSnapshot] containing the message’s current state and full history
      *         or `null` if no message with the given ID is being tracked.
      */
     suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot?

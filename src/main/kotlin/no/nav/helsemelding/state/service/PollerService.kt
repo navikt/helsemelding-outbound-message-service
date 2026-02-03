@@ -141,8 +141,8 @@ class PollerService(
         log.info { message.formatTransition(PENDING) }
         messageStateService.recordStateChange(
             UpdateState(
-                message.messageType,
                 message.externalRefId,
+                message.messageType,
                 message.externalDeliveryState,
                 newState,
                 message.appRecStatus,
@@ -159,8 +159,8 @@ class PollerService(
         log.info { message.formatTransition(COMPLETED) }
         messageStateService.recordStateChange(
             UpdateState(
-                message.messageType,
                 message.externalRefId,
+                message.messageType,
                 message.externalDeliveryState,
                 newState,
                 message.appRecStatus,
@@ -179,8 +179,8 @@ class PollerService(
         log.warn { message.formatTransition(REJECTED) }
         messageStateService.recordStateChange(
             UpdateState(
-                message.messageType,
                 message.externalRefId,
+                message.messageType,
                 message.externalDeliveryState,
                 newState,
                 message.appRecStatus,

@@ -6,8 +6,9 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 data class CreateState(
-    val messageType: MessageType,
+    val id: Uuid,
     val externalRefId: Uuid,
+    val messageType: MessageType,
     val externalMessageUrl: URL,
     val occurredAt: Instant = Clock.System.now()
 )

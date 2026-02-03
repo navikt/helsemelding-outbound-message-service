@@ -22,8 +22,9 @@ class ExposedMessageStateTransactionRepository(
         createState: CreateState
     ): MessageStateSnapshot = suspendTransaction(database) {
         val messageState = messageRepository.createState(
-            messageType = createState.messageType,
+            id = createState.id,
             externalRefId = createState.externalRefId,
+            messageType = createState.messageType,
             externalMessageUrl = createState.externalMessageUrl,
             lastStateChange = createState.occurredAt
         )
@@ -72,8 +73,9 @@ class FakeMessageStateTransactionRepository(
         createState: CreateState
     ): MessageStateSnapshot {
         val messageState = messageRepository.createState(
-            messageType = createState.messageType,
+            id = createState.id,
             externalRefId = createState.externalRefId,
+            messageType = createState.messageType,
             externalMessageUrl = createState.externalMessageUrl,
             lastStateChange = createState.occurredAt
         )

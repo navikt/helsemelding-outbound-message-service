@@ -50,13 +50,15 @@ class MessageRepositorySpec : StringSpec(
                 suspendTransaction(database) {
                     val messageRepository = ExposedMessageRepository(database)
 
+                    val id = Uuid.random()
                     val externalRefId = Uuid.random()
                     val externalMessageUrl = URI.create(MESSAGE1).toURL()
                     val now = Clock.System.now()
 
                     val state = messageRepository.createState(
-                        messageType = DIALOG,
+                        id,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         externalMessageUrl = externalMessageUrl,
                         lastStateChange = now
                     )
@@ -79,12 +81,14 @@ class MessageRepositorySpec : StringSpec(
                 suspendTransaction(database) {
                     val messageRepository = ExposedMessageRepository(database)
 
+                    val id = Uuid.random()
                     val externalRefId = Uuid.random()
                     val externalMessageUrl = URI.create(MESSAGE1).toURL()
 
                     messageRepository.createState(
-                        messageType = DIALOG,
+                        id = id,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         externalMessageUrl = externalMessageUrl,
                         lastStateChange = Clock.System.now()
                     )
@@ -122,12 +126,14 @@ class MessageRepositorySpec : StringSpec(
                 suspendTransaction(database) {
                     val messageRepository = ExposedMessageRepository(database)
 
+                    val id = Uuid.random()
                     val externalRefId = Uuid.random()
                     val externalMessageUrl = URI.create(MESSAGE1).toURL()
 
                     messageRepository.createState(
-                        messageType = DIALOG,
+                        id = id,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         externalMessageUrl = externalMessageUrl,
                         lastStateChange = Clock.System.now()
                     )
@@ -167,15 +173,17 @@ class MessageRepositorySpec : StringSpec(
                     val messageRepository = ExposedMessageRepository(database)
 
                     messageRepository.createState(
-                        DIALOG,
                         Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
                         URI.create(MESSAGE1).toURL(),
                         Clock.System.now()
                     )
 
                     messageRepository.createState(
-                        DIALOG,
                         Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
                         URI.create(MESSAGE2).toURL(),
                         Clock.System.now()
                     )
@@ -186,8 +194,9 @@ class MessageRepositorySpec : StringSpec(
                         }
 
                     messageRepository.createState(
-                        DIALOG,
                         Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
                         URI.create(MESSAGE3).toURL(),
                         Clock.System.now()
                     )
@@ -198,8 +207,9 @@ class MessageRepositorySpec : StringSpec(
                         }
 
                     messageRepository.createState(
-                        DIALOG,
                         Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
                         URI.create(MESSAGE4).toURL(),
                         Clock.System.now()
                     )
@@ -211,8 +221,9 @@ class MessageRepositorySpec : StringSpec(
                         }
 
                     messageRepository.createState(
-                        DIALOG,
                         Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
                         URI.create(MESSAGE5).toURL(),
                         Clock.System.now()
                     )
@@ -235,11 +246,26 @@ class MessageRepositorySpec : StringSpec(
                     val messageRepository = ExposedMessageRepository(database)
                     val now = Clock.System.now()
 
+                    val oldId = Uuid.random()
+                    val newId = Uuid.random()
                     val oldExternalRefId = Uuid.random()
                     val newExternalRefId = Uuid.random()
 
-                    messageRepository.createState(DIALOG, oldExternalRefId, URI.create(MESSAGE1).toURL(), now)
-                    messageRepository.createState(DIALOG, newExternalRefId, URI.create(MESSAGE2).toURL(), now)
+                    messageRepository.createState(
+                        oldId,
+                        oldExternalRefId,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        newId,
+                        newExternalRefId,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
 
                     Messages.update({ externalRefId eq oldExternalRefId }) {
                         it[lastPolledAt] = now - Duration.parse("31s")
@@ -264,19 +290,34 @@ class MessageRepositorySpec : StringSpec(
                     val messageRepository = ExposedMessageRepository(database)
                     val now = Clock.System.now()
 
-                    val never = Uuid.random()
-                    val recent = Uuid.random()
+                    val neverId = Uuid.random()
+                    val recentId = Uuid.random()
+                    val neverExternalRefId = Uuid.random()
+                    val recentExternalRefId = Uuid.random()
 
-                    messageRepository.createState(DIALOG, never, URI.create(MESSAGE1).toURL(), now)
-                    messageRepository.createState(DIALOG, recent, URI.create(MESSAGE2).toURL(), now)
+                    messageRepository.createState(
+                        neverId,
+                        neverExternalRefId,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        now
+                    )
 
-                    Messages.update({ externalRefId eq recent }) {
+                    messageRepository.createState(
+                        recentId,
+                        recentExternalRefId,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
+
+                    Messages.update({ externalRefId eq recentExternalRefId }) {
                         it[lastPolledAt] = now
                     }
 
                     val externalRefIds = messageRepository.findForPolling().map { it.externalRefId }
-                    externalRefIds shouldContain never
-                    externalRefIds shouldNotContain recent
+                    externalRefIds shouldContain neverExternalRefId
+                    externalRefIds shouldNotContain recentExternalRefId
                 }
             }
         }
@@ -288,14 +329,37 @@ class MessageRepositorySpec : StringSpec(
                 suspendTransaction(database) {
                     val messageRepository = ExposedMessageRepository(database)
 
+                    val id1 = Uuid.random()
+                    val id2 = Uuid.random()
+                    val id3 = Uuid.random()
                     val externalRefId1 = Uuid.random()
                     val externalRefId2 = Uuid.random()
                     val externalRefId3 = Uuid.random()
                     val now = Clock.System.now()
 
-                    messageRepository.createState(DIALOG, externalRefId1, URI.create(MESSAGE1).toURL(), now)
-                    messageRepository.createState(DIALOG, externalRefId2, URI.create(MESSAGE2).toURL(), now)
-                    messageRepository.createState(DIALOG, externalRefId3, URI.create(MESSAGE3).toURL(), now)
+                    messageRepository.createState(
+                        id1,
+                        externalRefId1,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        id2,
+                        externalRefId2,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        id3,
+                        externalRefId3,
+                        DIALOG,
+                        URI.create(MESSAGE3).toURL(),
+                        now
+                    )
 
                     messageRepository.markPolled(listOf(externalRefId1, externalRefId2)) shouldBe 2
 
