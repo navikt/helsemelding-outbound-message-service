@@ -65,8 +65,9 @@ object Messages : Table("messages") {
 
 interface MessageRepository {
     suspend fun createState(
-        messageType: MessageType,
+        id: Uuid,
         externalRefId: Uuid,
+        messageType: MessageType,
         externalMessageUrl: URL,
         lastStateChange: Instant
     ): MessageState
@@ -78,7 +79,7 @@ interface MessageRepository {
         lastStateChange: Instant
     ): MessageState
 
-    suspend fun findOrNull(id: Uuid): MessageState?
+    suspend fun findOrNull(externalRefId: Uuid): MessageState?
 
     suspend fun findForPolling(): List<MessageState>
 
@@ -89,14 +90,16 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
     private val poller = config().poller
 
     override suspend fun createState(
-        messageType: MessageType,
+        id: Uuid,
         externalRefId: Uuid,
+        messageType: MessageType,
         externalMessageUrl: URL,
         lastStateChange: Instant
     ): MessageState =
         Messages.insertReturning { insert ->
-            insert[Messages.messageType] = messageType
+            insert[Messages.id] = id
             insert[Messages.externalRefId] = externalRefId
+            insert[Messages.messageType] = messageType
             insert[Messages.externalMessageUrl] = externalMessageUrl
             insert[Messages.externalDeliveryState] = null
             insert[Messages.appRecStatus] = null
@@ -121,9 +124,9 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             .single()
             .toMessageState()
 
-    override suspend fun findOrNull(id: Uuid): MessageState? = suspendTransaction(database) {
+    override suspend fun findOrNull(externalRefId: Uuid): MessageState? = suspendTransaction(database) {
         Messages
-            .selectAll().where { Messages.externalRefId eq id }
+            .selectAll().where { Messages.externalRefId eq externalRefId }
             .singleOrNull()
             ?.toMessageState()
     }
@@ -170,15 +173,16 @@ class FakeMessageRepository : MessageRepository {
     private val messages = HashMap<Uuid, MessageState>()
 
     override suspend fun createState(
-        messageType: MessageType,
+        id: Uuid,
         externalRefId: Uuid,
+        messageType: MessageType,
         externalMessageUrl: URL,
         lastStateChange: Instant
     ): MessageState {
         val newMessage = MessageState(
-            id = Uuid.random(),
-            messageType = messageType,
+            id = id,
             externalRefId = externalRefId,
+            messageType = messageType,
             externalMessageUrl = externalMessageUrl,
             externalDeliveryState = null,
             appRecStatus = null,
@@ -208,7 +212,7 @@ class FakeMessageRepository : MessageRepository {
         return updated
     }
 
-    override suspend fun findOrNull(id: Uuid): MessageState? = messages[id]
+    override suspend fun findOrNull(externalRefId: Uuid): MessageState? = messages[externalRefId]
 
     override suspend fun findForPolling(): List<MessageState> =
         messages.values

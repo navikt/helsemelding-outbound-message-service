@@ -64,13 +64,15 @@ class MessageStateHistoryRepositorySpec : StringSpec(
                     val messageRepository = ExposedMessageRepository(database)
                     val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
 
+                    val id = Uuid.random()
                     val externalRefId = Uuid.random()
                     val externalMessageUrl = URI.create(MESSAGE).toURL()
                     val occurredAt = Clock.System.now()
 
                     messageRepository.createState(
-                        messageType = DIALOG,
+                        id = id,
                         externalRefId = externalRefId,
+                        messageType = DIALOG,
                         externalMessageUrl = externalMessageUrl,
                         lastStateChange = occurredAt
                     )
@@ -104,11 +106,18 @@ class MessageStateHistoryRepositorySpec : StringSpec(
                     val messageRepository = ExposedMessageRepository(database)
                     val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
 
+                    val id = Uuid.random()
                     val externalRefId = Uuid.random()
                     val externalMessageUrl = URI.create(MESSAGE).toURL()
                     val now = Clock.System.now()
 
-                    messageRepository.createState(DIALOG, externalRefId, externalMessageUrl, now)
+                    messageRepository.createState(
+                        id,
+                        externalRefId,
+                        DIALOG,
+                        externalMessageUrl,
+                        now
+                    )
 
                     messageStateHistoryRepository.append(
                         messageId = externalRefId,
@@ -159,11 +168,18 @@ class MessageStateHistoryRepositorySpec : StringSpec(
                     val messageRepository = ExposedMessageRepository(database)
                     val messageStateHistoryRepository = ExposedMessageStateHistoryRepository(database)
 
+                    val id = Uuid.random()
                     val externalRefId = Uuid.random()
                     val externalMessageUrl = URI.create(MESSAGE).toURL()
                     val now = Clock.System.now()
 
-                    messageRepository.createState(DIALOG, externalRefId, externalMessageUrl, now)
+                    messageRepository.createState(
+                        id,
+                        externalRefId,
+                        DIALOG,
+                        externalMessageUrl,
+                        now
+                    )
 
                     messageStateHistoryRepository.append(
                         externalRefId,

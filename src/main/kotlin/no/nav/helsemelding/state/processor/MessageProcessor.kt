@@ -62,8 +62,9 @@ class MessageProcessor(
     private suspend fun initializeState(metadata: Metadata, dialogMessageId: Uuid) {
         val snapshot = messageStateService.createInitialState(
             CreateState(
-                messageType = DIALOG,
+                id = dialogMessageId,
                 externalRefId = metadata.id,
+                messageType = DIALOG,
                 externalMessageUrl = URI.create(metadata.location).toURL()
             )
         )

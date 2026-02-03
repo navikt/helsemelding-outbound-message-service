@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.DeliveryState
+import no.nav.helsemelding.ediadapter.model.DeliveryState.UNCONFIRMED
 import no.nav.helsemelding.state.FakeEdiAdapterClient
 import no.nav.helsemelding.state.evaluator.StateEvaluator
 import no.nav.helsemelding.state.evaluator.StateTransitionValidator
@@ -27,15 +28,32 @@ class PollerServiceSpec : StringSpec(
         "Mark polled messages → not pollable on next run" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 
-            val ref1 = Uuid.random()
-            val ref2 = Uuid.random()
+            val id1 = Uuid.random()
+            val id2 = Uuid.random()
+            val externalRefId1 = Uuid.random()
+            val externalRefId2 = Uuid.random()
             val url = URI("http://example.com/1").toURL()
 
-            messageStateService.createInitialState(CreateState(DIALOG, ref1, url))
-            messageStateService.createInitialState(CreateState(DIALOG, ref2, url))
+            messageStateService.createInitialState(
+                CreateState(
+                    id1,
+                    externalRefId1,
+                    DIALOG,
+                    url
+                )
+            )
 
-            ediAdapterClient.givenStatus(ref1, DeliveryState.ACKNOWLEDGED, null)
-            ediAdapterClient.givenStatus(ref2, DeliveryState.ACKNOWLEDGED, null)
+            messageStateService.createInitialState(
+                CreateState(
+                    id2,
+                    externalRefId2,
+                    DIALOG,
+                    url
+                )
+            )
+
+            ediAdapterClient.givenStatus(externalRefId1, DeliveryState.ACKNOWLEDGED, null)
+            ediAdapterClient.givenStatus(externalRefId2, DeliveryState.ACKNOWLEDGED, null)
 
             pollerService.pollMessages()
             pollerService.pollMessages()
@@ -57,10 +75,18 @@ class PollerServiceSpec : StringSpec(
         "No status list → no state change and no publish" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 
+            val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
-            val snapshot = messageStateService.createInitialState(CreateState(DIALOG, externalRefId, externalUrl))
+            val snapshot = messageStateService.createInitialState(
+                CreateState(
+                    id,
+                    externalRefId,
+                    DIALOG,
+                    externalUrl
+                )
+            )
 
             ediAdapterClient.givenStatusList(externalRefId, emptyList())
 
@@ -75,13 +101,15 @@ class PollerServiceSpec : StringSpec(
         "No state change → no publish" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 
+            val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
             val messageSnapshot = messageStateService.createInitialState(
                 CreateState(
-                    DIALOG,
+                    id,
                     externalRefId,
+                    DIALOG,
                     externalUrl
                 )
             )
@@ -99,13 +127,15 @@ class PollerServiceSpec : StringSpec(
         "PENDING → COMPLETED publishes update" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 
+            val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
             val messageSnapshot = messageStateService.createInitialState(
                 CreateState(
-                    DIALOG,
+                    id,
                     externalRefId,
+                    DIALOG,
                     externalUrl
                 )
             )
@@ -127,13 +157,15 @@ class PollerServiceSpec : StringSpec(
         "External REJECTED → publish rejection" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 
+            val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
             val messageSnapshot = messageStateService.createInitialState(
                 CreateState(
-                    DIALOG,
+                    id,
                     externalRefId,
+                    DIALOG,
                     externalUrl
                 )
             )
@@ -149,18 +181,20 @@ class PollerServiceSpec : StringSpec(
         "Unresolvable external state → INVALID but not published" {
             val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
 
+            val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
             val messageSnapshot = messageStateService.createInitialState(
                 CreateState(
-                    DIALOG,
+                    id,
                     externalRefId,
+                    DIALOG,
                     externalUrl
                 )
             )
 
-            ediAdapterClient.givenStatus(externalRefId, DeliveryState.UNCONFIRMED, ExternalAppRecStatus.REJECTED)
+            ediAdapterClient.givenStatus(externalRefId, UNCONFIRMED, ExternalAppRecStatus.REJECTED)
 
             val messageState = messageSnapshot.messageState
 
