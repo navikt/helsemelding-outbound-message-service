@@ -49,7 +49,8 @@ fun main() = SuspendApp {
             val messageProcessor = MessageProcessor(
                 messageReceiver = messageReceiver(deps.kafkaReceiver),
                 messageStateService = messageStateService(deps.database),
-                ediAdapterClient = deps.ediAdapterClient
+                ediAdapterClient = deps.ediAdapterClient,
+                payloadSigningClient = deps.payloadSigningClient
             )
 
             server(

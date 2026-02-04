@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.onEach
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
+import no.nav.helsemelding.payloadsigning.client.PayloadSigningClient
+import no.nav.helsemelding.payloadsigning.model.Direction.OUT
+import no.nav.helsemelding.payloadsigning.model.PayloadRequest
 import no.nav.helsemelding.state.model.CreateState
 import no.nav.helsemelding.state.model.DialogMessage
 import no.nav.helsemelding.state.model.MessageType.DIALOG
@@ -27,7 +30,8 @@ const val BASE64_ENCODING = "base64"
 class MessageProcessor(
     private val messageReceiver: MessageReceiver,
     private val messageStateService: MessageStateService,
-    private val ediAdapterClient: EdiAdapterClient
+    private val ediAdapterClient: EdiAdapterClient,
+    private val payloadSigningClient: PayloadSigningClient
 ) {
     fun processMessages(scope: CoroutineScope): Job =
         messageFlow()
@@ -38,6 +42,20 @@ class MessageProcessor(
     private fun messageFlow(): Flow<DialogMessage> = messageReceiver.receiveMessages()
 
     internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
+        payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
+            .onRight { payloadResponse ->
+                log.info { "dialogMessageId=${dialogMessage.id} Successfully signed" }
+                val signedXml = payloadResponse.bytes
+                postMessage(dialogMessage.copy(payload = signedXml))
+            }
+            .onLeft { error ->
+                log.error {
+                    "dialogMessageId=${dialogMessage.id} Failed signing message: $error"
+                }
+            }
+    }
+
+    private suspend fun postMessage(dialogMessage: DialogMessage) {
         val postMessageRequest = PostMessageRequest(
             businessDocument = Base64.encode(dialogMessage.payload),
             contentType = ContentType.Application.Xml.toString(),
