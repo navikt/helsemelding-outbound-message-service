@@ -23,6 +23,9 @@ spec:
     - access: write
       application: message-generator
       team: helsemelding
+    - access: read
+      application: helsemelding-kafka-manager
+      team: helsemelding
 
 ---
 
@@ -48,6 +51,9 @@ spec:
     - access: readwrite
       application: state-service
       team: helsemelding
+    - access: read
+      application: helsemelding-kafka-manager
+      team: helsemelding
 
 ---
 
@@ -72,4 +78,7 @@ spec:
   acl:
     - access: readwrite
       application: state-service
+      team: helsemelding
+    - access: read
+      application: helsemelding-kafka-manager
       team: helsemelding
