@@ -50,7 +50,7 @@ class MessageProcessor(
             }
             .onLeft { error ->
                 log.error {
-                    "dialogMessageId=${dialogMessage.id} Failed calling payload signing service: $error"
+                    "dialogMessageId=${dialogMessage.id} Failed signing message: $error"
                 }
             }
     }
