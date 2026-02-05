@@ -24,7 +24,7 @@ spec:
       application: message-generator
       team: helsemelding
     - access: read
-      application: helsemelding-kafka-manager
+      application: kafka-manager
       team: helsemelding
 
 ---
@@ -52,7 +52,7 @@ spec:
       application: state-service
       team: helsemelding
     - access: read
-      application: helsemelding-kafka-manager
+      application: kafka-manager
       team: helsemelding
 
 ---
@@ -80,5 +80,5 @@ spec:
       application: state-service
       team: helsemelding
     - access: read
-      application: helsemelding-kafka-manager
+      application: kafka-manager
       team: helsemelding
