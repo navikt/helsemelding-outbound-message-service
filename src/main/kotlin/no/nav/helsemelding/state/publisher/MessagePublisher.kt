@@ -42,7 +42,6 @@ private class GenericMessagePublisher(
     private val kafkaPublisher: KafkaPublisher<String, ByteArray>,
     private val topic: String
 ) : MessagePublisher {
-
     override suspend fun publish(referenceId: Uuid, message: String): Either<PublishError, RecordMetadata> =
         kafkaPublisher.publishScope {
             publishCatching(
@@ -78,8 +77,8 @@ class FakeStatusMessagePublisher(
 
         val md = RecordMetadata(
             TopicPartition(topic, 0),
-            0L, // offset
-            0, // leaderEpoch
+            0L,
+            0,
             System.currentTimeMillis(),
             referenceId.toByteArray().size,
             published.single().size
