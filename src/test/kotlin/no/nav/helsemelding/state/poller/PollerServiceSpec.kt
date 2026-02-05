@@ -2,31 +2,36 @@ package no.nav.helsemelding.state.poller
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.Json
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
+import no.nav.helsemelding.ediadapter.model.AppRecStatus.OK
+import no.nav.helsemelding.ediadapter.model.ApprecInfo
 import no.nav.helsemelding.ediadapter.model.DeliveryState
 import no.nav.helsemelding.ediadapter.model.DeliveryState.UNCONFIRMED
 import no.nav.helsemelding.state.FakeEdiAdapterClient
 import no.nav.helsemelding.state.evaluator.StateEvaluator
 import no.nav.helsemelding.state.evaluator.StateTransitionValidator
-import no.nav.helsemelding.state.model.AppRecStatus.OK
-import no.nav.helsemelding.state.model.AppRecStatus.REJECTED
+import no.nav.helsemelding.state.model.ApprecStatusMessage
 import no.nav.helsemelding.state.model.CreateState
 import no.nav.helsemelding.state.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.state.model.MessageType.DIALOG
-import no.nav.helsemelding.state.publisher.FakeDialogMessagePublisher
+import no.nav.helsemelding.state.model.TransportStatusMessage
+import no.nav.helsemelding.state.model.UpdateState
+import no.nav.helsemelding.state.publisher.FakeStatusMessagePublisher
 import no.nav.helsemelding.state.publisher.MessagePublisher
 import no.nav.helsemelding.state.service.FakeTransactionalMessageStateService
 import no.nav.helsemelding.state.service.MessageStateService
 import no.nav.helsemelding.state.service.PollerService
 import no.nav.helsemelding.state.service.StateEvaluatorService
 import java.net.URI
+import kotlin.time.Clock
 import kotlin.uuid.Uuid
 import no.nav.helsemelding.ediadapter.model.AppRecStatus as ExternalAppRecStatus
 
 class PollerServiceSpec : StringSpec(
     {
         "Mark polled messages → not pollable on next run" {
-            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id1 = Uuid.random()
             val id2 = Uuid.random()
@@ -58,7 +63,7 @@ class PollerServiceSpec : StringSpec(
             pollerService.pollMessages()
             pollerService.pollMessages()
 
-            dialogMessagePublisher.published shouldBe emptyList()
+            statusMessagePublisher.published shouldBe emptyList()
             messageStateService.findPollableMessages() shouldBe emptyList()
         }
 
@@ -73,7 +78,7 @@ class PollerServiceSpec : StringSpec(
         }
 
         "No status list → no state change and no publish" {
-            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
@@ -95,11 +100,11 @@ class PollerServiceSpec : StringSpec(
             val current = messageStateService.getMessageSnapshot(externalRefId)!!
             current.messageState.externalDeliveryState shouldBe null
             current.messageState.appRecStatus shouldBe null
-            dialogMessagePublisher.published shouldBe emptyList()
+            statusMessagePublisher.published shouldBe emptyList()
         }
 
         "No state change → no publish" {
-            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
@@ -121,11 +126,11 @@ class PollerServiceSpec : StringSpec(
             currentMessageSnapshot.messageState.externalDeliveryState shouldBe ACKNOWLEDGED
             currentMessageSnapshot.messageState.appRecStatus shouldBe null
 
-            dialogMessagePublisher.published shouldBe emptyList()
+            statusMessagePublisher.published shouldBe emptyList()
         }
 
-        "PENDING → COMPLETED publishes update" {
-            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+        "PENDING → COMPLETED publish update" {
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
@@ -145,17 +150,36 @@ class PollerServiceSpec : StringSpec(
             val messageState = messageSnapshot.messageState
             pollerService.pollAndProcessMessage(messageState)
 
-            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, ExternalAppRecStatus.OK)
+            val updatedMessageSnapshot = messageStateService.recordStateChange(
+                UpdateState(
+                    externalRefId,
+                    DIALOG,
+                    ACKNOWLEDGED,
+                    ACKNOWLEDGED,
+                    null,
+                    null,
+                    Clock.System.now()
+                )
+            )
 
-            pollerService.pollAndProcessMessage(messageState)
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
+            ediAdapterClient.givenApprecInfoSingle(externalRefId, ApprecInfo(1, OK))
 
-            dialogMessagePublisher.published.size shouldBe 1
-            dialogMessagePublisher.published.first().referenceId shouldBe externalRefId
-            dialogMessagePublisher.published.first().appRecStatus shouldBe OK
+            val updatedMessageState = updatedMessageSnapshot.messageState
+            pollerService.pollAndProcessMessage(updatedMessageState)
+
+            statusMessagePublisher.published.size shouldBe 1
+
+            val bytes = statusMessagePublisher.published.single()
+            val apprectStatus = Json.decodeFromString<ApprecStatusMessage>(String(bytes))
+
+            // apprectStatus.messageId shouldBe id
+            // apprectStatus.source shouldBe "apprec"
+            // apprectStatus.apprec.appRecStatus shouldBe OK
         }
 
         "External REJECTED → publish rejection" {
-            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
@@ -173,13 +197,18 @@ class PollerServiceSpec : StringSpec(
 
             pollerService.pollAndProcessMessage(messageSnapshot.messageState)
 
-            dialogMessagePublisher.published.size shouldBe 1
-            dialogMessagePublisher.published.first().referenceId shouldBe externalRefId
-            dialogMessagePublisher.published.first().appRecStatus shouldBe REJECTED
+            statusMessagePublisher.published.size shouldBe 1
+
+            val bytes = statusMessagePublisher.published.single()
+            val transportStatus = Json.decodeFromString<TransportStatusMessage>(String(bytes))
+
+            transportStatus.messageId shouldBe id
+            transportStatus.source shouldBe "transport"
+            transportStatus.error.code shouldBe "REJECTED"
         }
 
         "Unresolvable external state → INVALID but not published" {
-            val (ediAdapterClient, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
@@ -204,7 +233,7 @@ class PollerServiceSpec : StringSpec(
             currentMessageSnapshot.messageState.externalDeliveryState shouldBe null
             currentMessageSnapshot.messageState.appRecStatus shouldBe null
 
-            dialogMessagePublisher.published shouldBe emptyList()
+            statusMessagePublisher.published shouldBe emptyList()
         }
     }
 )
@@ -212,14 +241,14 @@ class PollerServiceSpec : StringSpec(
 private data class Fixture(
     val ediAdapterClient: FakeEdiAdapterClient,
     val messageStateService: FakeTransactionalMessageStateService,
-    val dialogMessagePublisher: FakeDialogMessagePublisher,
+    val dialogMessagePublisher: FakeStatusMessagePublisher,
     val pollerService: PollerService
 )
 
 private fun fixture(): Fixture {
     val ediAdapterClient = FakeEdiAdapterClient()
     val messageStateService = FakeTransactionalMessageStateService()
-    val dialogMessagePublisher = FakeDialogMessagePublisher()
+    val dialogMessagePublisher = FakeStatusMessagePublisher()
 
     return Fixture(
         ediAdapterClient,

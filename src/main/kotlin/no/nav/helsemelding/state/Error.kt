@@ -1,9 +1,11 @@
 package no.nav.helsemelding.state
 
+import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.ExternalDeliveryState
 import no.nav.helsemelding.state.model.MessageDeliveryState
 import no.nav.helsemelding.state.model.MessageState
+import kotlin.uuid.Uuid
 
 sealed interface Error
 
@@ -23,6 +25,25 @@ sealed interface StateTransitionError : StateError {
     ) : StateTransitionError
 }
 
+sealed interface EdiAdapterError : StateError {
+    data class NoApprecReturned(
+        val externalRefId: Uuid
+    ) : EdiAdapterError
+
+    data class FetchFailure(
+        val externalRefId: Uuid,
+        val cause: ErrorMessage
+    ) : EdiAdapterError
+}
+
+sealed interface PublishError : StateError {
+    data class Failure(
+        val messageId: Uuid,
+        val topic: String,
+        val cause: Throwable
+    ) : PublishError
+}
+
 fun StateError.withMessageContext(message: MessageState): String =
     "Message ${message.externalRefId}: ${formatForLog()}"
 
@@ -32,4 +53,13 @@ private fun StateError.formatForLog(): String = when (this) {
 
     is StateTransitionError.IllegalTransition ->
         "IllegalTransition(from=$from, to=$to)"
+
+    is EdiAdapterError.NoApprecReturned ->
+        "NoApprecReturned(externalRefId=$externalRefId)"
+
+    is EdiAdapterError.FetchFailure ->
+        "FetchFailure(externalRefId=$externalRefId, cause=$cause)"
+
+    is PublishError.Failure ->
+        "PublishFailure(messageId=$messageId, topic=$topic, cause=$cause)"
 }
