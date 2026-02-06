@@ -109,4 +109,4 @@ private fun messageStateService(database: Database): MessageStateService {
 }
 
 private fun messageReceiver(kafkaReceiver: KafkaReceiver<String, ByteArray>): MessageReceiver =
-    MessageReceiver(kafkaReceiver)
+    MessageReceiver(config().kafka.topics.dialogMessageOut, kafkaReceiver)
