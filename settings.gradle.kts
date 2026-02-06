@@ -17,6 +17,7 @@ dependencyResolutionManagement {
             version("suspendapp", "0.5.0")
             version("ktor", "3.0.3")
             version("kotlin-logging", "7.0.3")
+            version("kotlinx-serialization", "1.9.0")
             version("token-validation-ktor", "5.0.15")
             version("eclipse-angus", "2.0.2")
             version("exposed", "1.0.0-rc-3")
@@ -66,6 +67,8 @@ dependencyResolutionManagement {
             library("postgresql", "org.postgresql", "postgresql").versionRef("postgresql")
 
             library("kotlin-kafka", "io.github.nomisrev", "kotlin-kafka").versionRef("kotlin-kafka")
+
+            library("kotlinx-serialization-json", "org.jetbrains.kotlinx", "kotlinx-serialization-json").versionRef("kotlinx-serialization")
 
             library("kotlin-logging", "io.github.oshai", "kotlin-logging-jvm").versionRef("kotlin-logging")
             library("logback-classic", "ch.qos.logback", "logback-classic").versionRef("logback")

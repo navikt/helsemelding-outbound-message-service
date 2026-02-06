@@ -23,6 +23,7 @@ class FakeEdiAdapterClient : EdiAdapterClient {
     private val businessDocumentById = mutableMapOf<Uuid, Either<ErrorMessage, GetBusinessDocumentResponse>>()
     private val postApprecById = mutableMapOf<Uuid, Either<ErrorMessage, Metadata>>()
     private val markAsReadById = mutableMapOf<Uuid, Either<ErrorMessage, Boolean>>()
+    private val apprecInfoById = mutableMapOf<Uuid, Either<ErrorMessage, List<ApprecInfo>>>()
     private val postMessages = ArrayDeque<Either<ErrorMessage, Metadata>>()
 
     val errorMessage404 = ErrorMessage(
@@ -75,6 +76,33 @@ class FakeEdiAdapterClient : EdiAdapterClient {
         postMessages.add(message)
     }
 
+    fun givenApprecInfo(
+        id: Uuid,
+        info: List<ApprecInfo>
+    ) {
+        apprecInfoById[id] = Right(info)
+    }
+
+    fun givenApprecInfoSingle(
+        id: Uuid,
+        info: ApprecInfo
+    ) {
+        apprecInfoById[id] = Right(listOf(info))
+    }
+
+    fun givenApprecInfoEmpty(
+        id: Uuid
+    ) {
+        apprecInfoById[id] = Right(emptyList())
+    }
+
+    fun givenApprecInfoError(
+        id: Uuid,
+        error: ErrorMessage
+    ) {
+        apprecInfoById[id] = Left(error)
+    }
+
     override suspend fun getMessageStatus(
         id: Uuid
     ): Either<ErrorMessage, List<StatusInfo>> =
@@ -103,7 +131,8 @@ class FakeEdiAdapterClient : EdiAdapterClient {
     ): Either<ErrorMessage, Boolean> =
         markAsReadById[id] ?: Right(true)
 
-    override suspend fun getApprecInfo(id: Uuid) = Right(emptyList<ApprecInfo>())
+    override suspend fun getApprecInfo(id: Uuid): Either<ErrorMessage, List<ApprecInfo>> =
+        apprecInfoById[id] ?: Right(emptyList())
 
     override suspend fun getMessages(getMessagesRequest: GetMessagesRequest) = Right(emptyList<Message>())
 

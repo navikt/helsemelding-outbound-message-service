@@ -5,7 +5,6 @@ import arrow.continuations.ktor.server
 import arrow.core.raise.result
 import arrow.fx.coroutines.resourceScope
 import arrow.resilience.Schedule
-import io.github.nomisRev.kafka.publisher.KafkaPublisher
 import io.github.nomisRev.kafka.receiver.KafkaReceiver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.Application
@@ -18,7 +17,7 @@ import no.nav.helsemelding.state.evaluator.StateTransitionValidator
 import no.nav.helsemelding.state.plugin.configureMetrics
 import no.nav.helsemelding.state.plugin.configureRoutes
 import no.nav.helsemelding.state.processor.MessageProcessor
-import no.nav.helsemelding.state.publisher.DialogMessagePublisher
+import no.nav.helsemelding.state.publisher.statusMessagePublisher
 import no.nav.helsemelding.state.receiver.MessageReceiver
 import no.nav.helsemelding.state.repository.ExposedMessageRepository
 import no.nav.helsemelding.state.repository.ExposedMessageStateHistoryRepository
@@ -43,7 +42,7 @@ fun main() = SuspendApp {
                 deps.ediAdapterClient,
                 messageStateService(deps.database),
                 stateEvaluatorService(),
-                dialogMessagePublisher(deps.kafkaPublisher)
+                statusMessagePublisher(deps.kafkaPublisher)
             )
 
             val messageProcessor = MessageProcessor(
@@ -92,9 +91,6 @@ private fun stateEvaluatorService(): StateEvaluatorService =
         StateEvaluator(),
         StateTransitionValidator()
     )
-
-private fun dialogMessagePublisher(kafkaPublisher: KafkaPublisher<String, ByteArray>): DialogMessagePublisher =
-    DialogMessagePublisher(kafkaPublisher)
 
 private fun messageStateService(database: Database): MessageStateService {
     val messageRepository = ExposedMessageRepository(database)
