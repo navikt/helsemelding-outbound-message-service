@@ -89,7 +89,7 @@ dependencyResolutionManagement {
             version("ktor", "3.0.3")
             version("ktor-server-test", "3.0.3")
             version("kotest", "5.9.1")
-            version("testcontainers", "1.18.1")
+            version("testcontainers", "1.21.4")
             version("kotest-extensions", "2.0.2")
             version("turbine", "1.2.0")
 

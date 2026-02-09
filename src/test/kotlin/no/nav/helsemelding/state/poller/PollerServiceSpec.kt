@@ -9,8 +9,10 @@ import no.nav.helsemelding.ediadapter.model.ApprecInfo
 import no.nav.helsemelding.ediadapter.model.DeliveryState
 import no.nav.helsemelding.ediadapter.model.DeliveryState.UNCONFIRMED
 import no.nav.helsemelding.state.FakeEdiAdapterClient
-import no.nav.helsemelding.state.evaluator.StateEvaluator
-import no.nav.helsemelding.state.evaluator.StateTransitionValidator
+import no.nav.helsemelding.state.evaluator.AppRecTransitionEvaluator
+import no.nav.helsemelding.state.evaluator.StateTransitionEvaluator
+import no.nav.helsemelding.state.evaluator.TransportStatusTranslator
+import no.nav.helsemelding.state.evaluator.TransportTransitionEvaluator
 import no.nav.helsemelding.state.model.ApprecStatusMessage
 import no.nav.helsemelding.state.model.CreateState
 import no.nav.helsemelding.state.model.ExternalDeliveryState.ACKNOWLEDGED
@@ -274,6 +276,9 @@ private fun pollerService(
 )
 
 private fun stateEvaluatorService(): StateEvaluatorService = StateEvaluatorService(
-    StateEvaluator(),
-    StateTransitionValidator()
+    TransportStatusTranslator(),
+    StateTransitionEvaluator(
+        TransportTransitionEvaluator(),
+        AppRecTransitionEvaluator()
+    )
 )

@@ -12,8 +12,10 @@ import io.ktor.server.netty.Netty
 import io.ktor.utils.io.CancellationException
 import io.micrometer.prometheus.PrometheusMeterRegistry
 import kotlinx.coroutines.awaitCancellation
-import no.nav.helsemelding.state.evaluator.StateEvaluator
-import no.nav.helsemelding.state.evaluator.StateTransitionValidator
+import no.nav.helsemelding.state.evaluator.AppRecTransitionEvaluator
+import no.nav.helsemelding.state.evaluator.StateTransitionEvaluator
+import no.nav.helsemelding.state.evaluator.TransportStatusTranslator
+import no.nav.helsemelding.state.evaluator.TransportTransitionEvaluator
 import no.nav.helsemelding.state.plugin.configureMetrics
 import no.nav.helsemelding.state.plugin.configureRoutes
 import no.nav.helsemelding.state.processor.MessageProcessor
@@ -88,8 +90,12 @@ private fun logError(t: Throwable) = log.error { "Shutdown state-service due to:
 
 private fun stateEvaluatorService(): StateEvaluatorService =
     StateEvaluatorService(
-        StateEvaluator(),
-        StateTransitionValidator()
+        TransportStatusTranslator(),
+        StateTransitionEvaluator(
+            TransportTransitionEvaluator(),
+            AppRecTransitionEvaluator()
+        )
+
     )
 
 private fun messageStateService(database: Database): MessageStateService {
