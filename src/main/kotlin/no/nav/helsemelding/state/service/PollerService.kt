@@ -21,6 +21,7 @@ import no.nav.helsemelding.state.StateTransitionError
 import no.nav.helsemelding.state.config
 import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.ApprecStatusMessage
+import no.nav.helsemelding.state.model.DeliveryEvaluationState
 import no.nav.helsemelding.state.model.ExternalDeliveryState
 import no.nav.helsemelding.state.model.MessageDeliveryState
 import no.nav.helsemelding.state.model.MessageDeliveryState.COMPLETED
@@ -139,14 +140,7 @@ class PollerService(
                 val newEvaluationState = evaluate(externalDeliveryState, appRecStatus)
 
                 determineNextState(oldEvaluationState, newEvaluationState)
-                    .also {
-                        log.debug {
-                            "${message.logPrefix()} Evaluated state: " +
-                                "old=(${oldEvaluationState.transport}, appRec=${oldEvaluationState.appRec}), " +
-                                "new=(${newEvaluationState.transport}, appRec=${newEvaluationState.appRec}), " +
-                                "next=$it"
-                        }
-                    }
+                    .withLogging(message, oldEvaluationState, newEvaluationState)
             }) { e: StateTransitionError ->
                 log.error { "Failed evaluating state: ${e.withMessageContext(message)}" }
                 INVALID
@@ -276,6 +270,19 @@ class PollerService(
             timestamp = Clock.System.now(),
             apprec = apprecInfo
         )
+
+    private fun MessageDeliveryState.withLogging(
+        message: MessageState,
+        oldEvaluationState: DeliveryEvaluationState,
+        newEvaluationState: DeliveryEvaluationState
+    ): MessageDeliveryState = also { nextState ->
+        log.debug {
+            "${message.logPrefix()} Evaluated state: " +
+                "old=(${oldEvaluationState.transport}, appRec=${oldEvaluationState.appRec}), " +
+                "new=(${newEvaluationState.transport}, appRec=${newEvaluationState.appRec}), " +
+                "next=$nextState"
+        }
+    }
 
     private fun List<MessageState>.withLogging(): List<MessageState> = also {
         log.info { "Pollable messages size=$size" }
