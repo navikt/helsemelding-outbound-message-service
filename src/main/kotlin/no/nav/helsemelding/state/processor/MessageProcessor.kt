@@ -2,6 +2,7 @@ package no.nav.helsemelding.state.processor
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
+import io.opentelemetry.api.GlobalOpenTelemetry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,6 +27,8 @@ import kotlin.io.encoding.Base64
 import kotlin.uuid.Uuid
 
 private val log = ExtendedLogger(KotlinLogging.logger {})
+private val tracer = GlobalOpenTelemetry.getTracer("message-processing")
+
 const val BASE64_ENCODING = "base64"
 
 class MessageProcessor(
@@ -43,17 +46,20 @@ class MessageProcessor(
     private fun messageFlow(): Flow<DialogMessage> = messageReceiver.receiveMessages()
 
     internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
-        payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
-            .onRight { payloadResponse ->
-                log.info { "dialogMessageId=${dialogMessage.id} Successfully signed" }
-                val signedXml = payloadResponse.bytes
-                postMessage(dialogMessage.copy(payload = signedXml))
-            }
-            .onLeft { error ->
-                log.error {
-                    "dialogMessageId=${dialogMessage.id} Failed signing message: $error"
+        val span = tracer.spanBuilder("messageProcessing").startSpan()
+        span.makeCurrent().use {
+            payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
+                .onRight { payloadResponse ->
+                    log.info { "dialogMessageId=${dialogMessage.id} Successfully signed" }
+                    val signedXml = payloadResponse.bytes
+                    postMessage(dialogMessage.copy(payload = signedXml))
                 }
-            }
+                .onLeft { error ->
+                    log.error {
+                        "dialogMessageId=${dialogMessage.id} Failed signing message: $error"
+                    }
+                }
+        }
     }
 
     private suspend fun postMessage(dialogMessage: DialogMessage) {
