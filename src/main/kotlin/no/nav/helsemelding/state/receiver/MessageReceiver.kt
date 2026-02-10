@@ -8,11 +8,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import no.nav.helsemelding.state.model.DialogMessage
+import no.nav.helsemelding.state.util.ExtendedLogger
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.kafka.common.serialization.StringDeserializer
 import kotlin.uuid.Uuid
 
-private val log = KotlinLogging.logger {}
+private val log = ExtendedLogger(KotlinLogging.logger {})
 
 class MessageReceiver(
     private val dialogMessageOutTopic: String,

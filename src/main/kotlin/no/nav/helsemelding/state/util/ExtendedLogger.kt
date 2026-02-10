@@ -33,4 +33,11 @@ class ExtendedLogger(private val logger: KLogger) {
             logger.error(msg)
         }
     }
+
+    fun error(err: Throwable?, msg: () -> Any?) {
+        val ctx = Span.current().spanContext
+        MDC.putCloseable("trace_id", ctx.traceId).use {
+            logger.error(err) { msg }
+        }
+    }
 }
