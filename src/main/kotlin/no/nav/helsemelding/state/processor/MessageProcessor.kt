@@ -46,7 +46,7 @@ class MessageProcessor(
     private fun messageFlow(): Flow<DialogMessage> = messageReceiver.receiveMessages()
 
     internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
-        val span = tracer.spanBuilder("messageProcessing").startSpan()
+        val span = tracer.spanBuilder("Process and send message").startSpan()
         span.makeCurrent().use {
             payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
                 .onRight { payloadResponse ->

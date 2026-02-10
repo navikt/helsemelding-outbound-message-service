@@ -8,6 +8,7 @@ import arrow.core.raise.recover
 import arrow.core.right
 import arrow.fx.coroutines.parMap
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.GlobalOpenTelemetry
 import kotlinx.coroutines.Dispatchers
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.ApprecInfo
@@ -49,6 +50,7 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private val log = ExtendedLogger(KotlinLogging.logger {})
+private val tracer = GlobalOpenTelemetry.getTracer("message-status-check")
 
 class PollerService(
     private val ediAdapterClient: EdiAdapterClient,
@@ -85,14 +87,17 @@ class PollerService(
     }
 
     internal suspend fun pollAndProcessMessage(message: MessageState): Either<ErrorMessage, List<StatusInfo>> {
-        log.debug { "${message.logPrefix()} Fetching status from EDI Adapter" }
+        val span = tracer.spanBuilder("Poll and process message").startSpan()
+        span.makeCurrent().use {
+            log.debug { "${message.logPrefix()} Fetching status from EDI Adapter" }
 
-        return ediAdapterClient.getMessageStatus(message.externalRefId)
-            .onRight { statuses ->
-                log.debug { "${message.logPrefix()} Received ${statuses.size} statuses" }
-                processMessage(statuses, message)
-            }
-            .onLeft { error -> log.error { "${message.logPrefix()} Error fetching status: $error" } }
+            return ediAdapterClient.getMessageStatus(message.externalRefId)
+                .onRight { statuses ->
+                    log.debug { "${message.logPrefix()} Received ${statuses.size} statuses" }
+                    processMessage(statuses, message)
+                }
+                .onLeft { error -> log.error { "${message.logPrefix()} Error fetching status: $error" } }
+        }
     }
 
     private suspend fun processMessage(
