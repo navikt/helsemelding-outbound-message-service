@@ -20,11 +20,12 @@ import no.nav.helsemelding.state.model.DialogMessage
 import no.nav.helsemelding.state.model.MessageType.DIALOG
 import no.nav.helsemelding.state.receiver.MessageReceiver
 import no.nav.helsemelding.state.service.MessageStateService
+import no.nav.helsemelding.state.util.ExtendedLogger
 import java.net.URI
 import kotlin.io.encoding.Base64
 import kotlin.uuid.Uuid
 
-private val log = KotlinLogging.logger {}
+private val log = ExtendedLogger(KotlinLogging.logger {})
 const val BASE64_ENCODING = "base64"
 
 class MessageProcessor(

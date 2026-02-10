@@ -4,13 +4,14 @@ import io.github.nomisRev.kafka.publisher.KafkaPublisher
 import io.github.oshai.kotlinlogging.KotlinLogging
 import no.nav.helsemelding.state.config
 import no.nav.helsemelding.state.model.AppRecStatus
+import no.nav.helsemelding.state.util.ExtendedLogger
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.clients.producer.RecordMetadata
 import org.apache.kafka.common.TopicPartition
 import kotlin.Result.Companion.failure
 import kotlin.uuid.Uuid
 
-private val log = KotlinLogging.logger {}
+private val log = ExtendedLogger(KotlinLogging.logger {})
 
 interface MessagePublisher {
     suspend fun publish(referenceId: Uuid, message: String): Result<RecordMetadata>

@@ -17,6 +17,7 @@ import no.nav.helsemelding.payloadsigning.client.PayloadSigningClient
 import no.nav.helsemelding.state.config.EdiAdapter
 import no.nav.helsemelding.state.config.Kafka
 import no.nav.helsemelding.state.config.PayloadSigning
+import no.nav.helsemelding.state.util.ExtendedLogger
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.output.MigrateResult
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -25,7 +26,7 @@ import no.nav.helsemelding.ediadapter.client.scopedAuthHttpClient as ediScopedAu
 import no.nav.helsemelding.payloadsigning.client.scopedAuthHttpClient as payloadScopedAuthHttpClient
 import no.nav.helsemelding.state.config.Database as DatabaseConfig
 
-private val log = KotlinLogging.logger {}
+private val log = ExtendedLogger(KotlinLogging.logger {})
 
 data class Dependencies(
     val database: Database,

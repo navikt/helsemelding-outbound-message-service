@@ -26,10 +26,11 @@ import no.nav.helsemelding.state.model.formatTransition
 import no.nav.helsemelding.state.model.formatUnchanged
 import no.nav.helsemelding.state.model.logPrefix
 import no.nav.helsemelding.state.publisher.MessagePublisher
+import no.nav.helsemelding.state.util.ExtendedLogger
 import no.nav.helsemelding.state.util.translate
 import no.nav.helsemelding.state.withMessageContext
 
-private val log = KotlinLogging.logger {}
+private val log = ExtendedLogger(KotlinLogging.logger {})
 
 class PollerService(
     private val ediAdapterClient: EdiAdapterClient,
