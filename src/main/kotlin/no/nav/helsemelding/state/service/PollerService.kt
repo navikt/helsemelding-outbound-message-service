@@ -241,8 +241,13 @@ class PollerService(
     ): Either<PublishError, RecordMetadata> =
         statusMessagePublisher.publish(
             messageId,
-            apprecStatusMessage(messageId, apprecInfo).toJson()
+            apprecStatusMessage(
+                messageId,
+                apprecInfo
+            )
+                .toJson()
         )
+            .withLogging(messageId)
 
     private suspend fun publishTransportStatus(
         messageId: Uuid,
@@ -250,8 +255,13 @@ class PollerService(
     ): Either<PublishError, RecordMetadata> =
         statusMessagePublisher.publish(
             messageId,
-            transportStatusMessage(messageId, deliveryState).toJson()
+            transportStatusMessage(
+                messageId,
+                deliveryState
+            )
+                .toJson()
         )
+            .withLogging(messageId)
 
     private fun transportStatusMessage(
         messageId: Uuid,
@@ -287,6 +297,15 @@ class PollerService(
                 "new=(${newEvaluationState.transport}, appRec=${newEvaluationState.appRec}), " +
                 "next=$nextState"
         }
+    }
+
+    private fun Either<PublishError, RecordMetadata>.withLogging(
+        messageId: Uuid
+    ): Either<PublishError, RecordMetadata> = also { either ->
+        either.fold(
+            { log.error { "Publish failed: messageId=$messageId, error=$it" } },
+            { log.info { "Publish succeeded: messageId=$messageId, topic=${it.topic()}" } }
+        )
     }
 
     private fun List<MessageState>.withLogging(): List<MessageState> = also {

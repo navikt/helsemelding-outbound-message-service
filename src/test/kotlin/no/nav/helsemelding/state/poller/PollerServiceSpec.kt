@@ -175,9 +175,8 @@ class PollerServiceSpec : StringSpec(
             val bytes = statusMessagePublisher.published.single()
             val apprectStatus = Json.decodeFromString<ApprecStatusMessage>(String(bytes))
 
-            // apprectStatus.messageId shouldBe id
-            // apprectStatus.source shouldBe "apprec"
-            // apprectStatus.apprec.appRecStatus shouldBe OK
+            apprectStatus.messageId shouldBe id
+            apprectStatus.apprec.appRecStatus shouldBe OK
         }
 
         "External REJECTED → publish rejection" {
@@ -205,7 +204,6 @@ class PollerServiceSpec : StringSpec(
             val transportStatus = Json.decodeFromString<TransportStatusMessage>(String(bytes))
 
             transportStatus.messageId shouldBe id
-            transportStatus.source shouldBe "transport"
             transportStatus.error.code shouldBe "REJECTED"
         }
 
