@@ -28,6 +28,6 @@ fun MessageState.formatInvalidState(): String = "${logPrefix()} Entered INVALID 
 fun MessageState.formatExternal(
     newState: ExternalDeliveryState?,
     newAppRecStatus: AppRecStatus?
-): String = "${logPrefix()} externalUpdate(delivery=$newState, appRec=$newAppRecStatus)"
+): String = "${logPrefix()} External update (transport=$newState, appRec=$newAppRecStatus)"
 
 fun MessageState.logPrefix(): String = "Message(type=$messageType, ref=$externalRefId)"

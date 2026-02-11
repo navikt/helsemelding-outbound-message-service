@@ -79,13 +79,13 @@ class PollerService(
 
     private suspend fun processBatch(batch: List<MessageState>) {
         val summary = batch.batchSummary()
-        log.info { "processing $summary" }
+        log.info { "Processing ($summary)" }
 
         logBatchDuration(summary) {
             batch.parMap(Dispatchers.IO) { pollAndProcessMessage(it) }
 
             val marked = messageStateService.markAsPolled(batch.map { it.externalRefId })
-            log.debug { "markedAsPolled=$marked ($summary)" }
+            log.debug { "Marked as polled (count=$marked, $summary)" }
         }
     }
 
@@ -297,8 +297,8 @@ class PollerService(
     ): MessageDeliveryState = also { nextState ->
         log.debug {
             "${message.logPrefix()} Evaluated state: " +
-                "old=(${oldEvaluationState.transport}, appRec=${oldEvaluationState.appRec}), " +
-                "new=(${newEvaluationState.transport}, appRec=${newEvaluationState.appRec}), " +
+                "old=(transport=${oldEvaluationState.transport}, appRec=${oldEvaluationState.appRec}), " +
+                "new=(transport=${newEvaluationState.transport}, appRec=${newEvaluationState.appRec}), " +
                 "next=$nextState"
         }
     }
@@ -328,7 +328,7 @@ class PollerService(
         return try {
             block()
         } finally {
-            log.info { "batch completed: $summary took ${System.currentTimeMillis() - start}ms" }
+            log.info { "Batch completed ($summary took ${System.currentTimeMillis() - start}ms)" }
         }
     }
 }
