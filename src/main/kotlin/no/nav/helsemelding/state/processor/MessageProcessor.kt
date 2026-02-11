@@ -3,6 +3,8 @@ package no.nav.helsemelding.state.processor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.opentelemetry.api.GlobalOpenTelemetry
+import io.opentelemetry.context.Context
+import io.opentelemetry.extension.kotlin.asContextElement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -10,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.withContext
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
@@ -47,7 +50,9 @@ class MessageProcessor(
 
     internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
         val span = tracer.spanBuilder("Process and send message").startSpan()
-        span.makeCurrent().use {
+        val otelContext = Context.current().with(span)
+
+        withContext(otelContext.asContextElement()) {
             payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
                 .onRight { payloadResponse ->
                     log.info { "dialogMessageId=${dialogMessage.id} Successfully signed" }

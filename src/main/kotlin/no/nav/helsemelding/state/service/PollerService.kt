@@ -91,8 +91,9 @@ class PollerService(
 
     internal suspend fun pollAndProcessMessage(message: MessageState): Either<ErrorMessage, List<StatusInfo>> {
         val span = tracer.spanBuilder("Poll and process message").startSpan()
-        val otelCtx = Context.current().with(span)
-        return withContext(otelCtx.asContextElement()) {
+        val otelContext = Context.current().with(span)
+
+        return withContext(otelContext.asContextElement()) {
             log.debug { "${message.logPrefix()} Fetching status from EDI Adapter" }
 
             ediAdapterClient.getMessageStatus(message.externalRefId)
