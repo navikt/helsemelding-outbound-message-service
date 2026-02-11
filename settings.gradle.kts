@@ -32,7 +32,6 @@ dependencyResolutionManagement {
             version("edi-adapter-client", "0.0.5")
             version("payload-signing-client", "0.0.1")
             version("opentelemetry-mdc", "2.24.0-alpha")
-            version("opentelemetry-annotations", "2.24.0")
             version("opentelemetry-extension-kotlin", "1.58.0")
 
             library("arrow-core", "io.arrow-kt", "arrow-core").versionRef("arrow")
@@ -84,7 +83,6 @@ dependencyResolutionManagement {
             library("payload-signing-client", "no.nav.helsemelding", "payload-signing-client").versionRef("payload-signing-client")
 
             library("opentelemetry-logback-mdc", "io.opentelemetry.instrumentation", "opentelemetry-logback-mdc-1.0").versionRef("opentelemetry-mdc")
-            library("opentelemetry-instrumentation-annotations", "io.opentelemetry.instrumentation", "opentelemetry-instrumentation-annotations").versionRef("opentelemetry-annotations")
             library("opentelemetry-extension-kotlin", "io.opentelemetry", "opentelemetry-extension-kotlin").versionRef("opentelemetry-extension-kotlin")
 
             bundle("prometheus", listOf("ktor-server-metrics-micrometer", "micrometer-registry-prometheus"))
@@ -93,7 +91,6 @@ dependencyResolutionManagement {
                 "opentelemetry",
                 listOf(
                     "opentelemetry-logback-mdc",
-                    "opentelemetry-instrumentation-annotations",
                     "opentelemetry-extension-kotlin"
                 )
             )
