@@ -1,19 +1,15 @@
-package no.nav.helsemelding.model
+package no.nav.helsemelding.state.model
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.AppRecStatus.OK
 import no.nav.helsemelding.state.model.AppRecStatus.OK_ERROR_IN_MESSAGE_PART
-import no.nav.helsemelding.state.model.DeliveryEvaluationState
 import no.nav.helsemelding.state.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.state.model.MessageDeliveryState.INVALID
 import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
-import no.nav.helsemelding.state.model.TransportStatus
 import no.nav.helsemelding.state.model.TransportStatus.ACKNOWLEDGED
-import no.nav.helsemelding.state.model.resolveDelivery
 
 class DeliveryEvaluationStateSpec : StringSpec(
     {
