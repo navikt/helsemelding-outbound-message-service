@@ -8,6 +8,10 @@ import no.nav.helsemelding.state.StateTransitionError
 import no.nav.helsemelding.state.model.AppRecStatus.OK
 import no.nav.helsemelding.state.model.AppRecStatus.OK_ERROR_IN_MESSAGE_PART
 import no.nav.helsemelding.state.model.AppRecStatus.REJECTED
+import no.nav.helsemelding.state.model.isNull
+import no.nav.helsemelding.state.model.isOk
+import no.nav.helsemelding.state.model.isOkErrorInMessagePart
+import no.nav.helsemelding.state.model.isRejected
 import no.nav.helsemelding.state.shouldBeLeftWhere
 
 class AppRecTransitionEvaluatorSpec : StringSpec(
@@ -51,8 +55,8 @@ class AppRecTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is StateTransitionError.IllegalAppRecTransition &&
-                    it.from == OK &&
-                    it.to == null
+                    it.from.isOk() &&
+                    it.to.isNull()
             }
         }
 
@@ -61,8 +65,8 @@ class AppRecTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is StateTransitionError.IllegalAppRecTransition &&
-                    it.from == OK &&
-                    it.to == OK_ERROR_IN_MESSAGE_PART
+                    it.from.isOk() &&
+                    it.to.isOkErrorInMessagePart()
             }
         }
 
@@ -71,8 +75,8 @@ class AppRecTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is StateTransitionError.IllegalAppRecTransition &&
-                    it.from == OK &&
-                    it.to == REJECTED
+                    it.from.isOk() &&
+                    it.to.isRejected()
             }
         }
 
@@ -83,8 +87,8 @@ class AppRecTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is StateTransitionError.IllegalAppRecTransition &&
-                    it.from == OK_ERROR_IN_MESSAGE_PART &&
-                    it.to == OK
+                    it.from.isOkErrorInMessagePart() &&
+                    it.to.isOk()
             }
         }
 
@@ -93,8 +97,8 @@ class AppRecTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is StateTransitionError.IllegalAppRecTransition &&
-                    it.from == OK_ERROR_IN_MESSAGE_PART &&
-                    it.to == REJECTED
+                    it.from.isOkErrorInMessagePart() &&
+                    it.to.isRejected()
             }
         }
 
@@ -103,8 +107,8 @@ class AppRecTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is StateTransitionError.IllegalAppRecTransition &&
-                    it.from == REJECTED &&
-                    it.to == OK
+                    it.from.isRejected() &&
+                    it.to.isOk()
             }
         }
     }

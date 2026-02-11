@@ -12,6 +12,8 @@ import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
 import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
+import no.nav.helsemelding.state.model.isNew
+import no.nav.helsemelding.state.model.isPending
 import no.nav.helsemelding.state.shouldBeLeftWhere
 
 class TransportTransitionEvaluatorSpec : StringSpec(
@@ -67,8 +69,8 @@ class TransportTransitionEvaluatorSpec : StringSpec(
 
             result shouldBeLeftWhere {
                 it is IllegalTransition &&
-                    it.from == PENDING &&
-                    it.to == NEW
+                    it.from.isPending() &&
+                    it.to.isNew()
             }
         }
 

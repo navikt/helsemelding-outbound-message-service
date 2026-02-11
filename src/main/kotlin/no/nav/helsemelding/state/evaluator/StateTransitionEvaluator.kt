@@ -3,7 +3,7 @@ package no.nav.helsemelding.state.evaluator
 import arrow.core.raise.Raise
 import no.nav.helsemelding.state.StateTransitionError
 import no.nav.helsemelding.state.model.DeliveryEvaluationState
-import no.nav.helsemelding.state.model.TransportStatus
+import no.nav.helsemelding.state.model.isNotAcknowledged
 import no.nav.helsemelding.state.model.isNotNull
 import no.nav.helsemelding.state.model.resolveDelivery
 
@@ -107,7 +107,7 @@ class StateTransitionEvaluator(
     fun Raise<StateTransitionError>.evaluate(old: DeliveryEvaluationState, new: DeliveryEvaluationState) {
         with(appRecValidator) { evaluate(old.appRec, new.appRec) }
 
-        if (new.transport != TransportStatus.ACKNOWLEDGED && new.appRec.isNotNull()) {
+        if (new.transport.isNotAcknowledged() && new.appRec.isNotNull()) {
             raise(
                 StateTransitionError.IllegalCombinedState(
                     "AppRec requires transport ACKNOWLEDGED (transport = ${new.transport})"
