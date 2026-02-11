@@ -3,6 +3,10 @@ package no.nav.helsemelding.state.evaluator
 import arrow.core.raise.Raise
 import no.nav.helsemelding.state.StateTransitionError
 import no.nav.helsemelding.state.model.MessageDeliveryState
+import no.nav.helsemelding.state.model.isNew
+import no.nav.helsemelding.state.model.isNotCompleted
+import no.nav.helsemelding.state.model.isNotInvalid
+import no.nav.helsemelding.state.model.isNotRejected
 
 /**
  * Evaluates whether a transition between two **resolved delivery lifecycle states**
@@ -105,7 +109,7 @@ class TransportTransitionEvaluator {
             MessageDeliveryState.NEW -> Unit
 
             MessageDeliveryState.PENDING -> {
-                if (new == MessageDeliveryState.NEW) {
+                if (new.isNew()) {
                     raise(
                         StateTransitionError.IllegalTransition(
                             from = old,
@@ -116,7 +120,7 @@ class TransportTransitionEvaluator {
             }
 
             MessageDeliveryState.COMPLETED -> {
-                if (new != MessageDeliveryState.COMPLETED) {
+                if (new.isNotCompleted()) {
                     raise(
                         StateTransitionError.IllegalTransition(
                             from = old,
@@ -127,7 +131,7 @@ class TransportTransitionEvaluator {
             }
 
             MessageDeliveryState.REJECTED -> {
-                if (new != MessageDeliveryState.REJECTED) {
+                if (new.isNotRejected()) {
                     raise(
                         StateTransitionError.IllegalTransition(
                             from = old,
@@ -138,7 +142,7 @@ class TransportTransitionEvaluator {
             }
 
             MessageDeliveryState.INVALID -> {
-                if (new != MessageDeliveryState.INVALID) {
+                if (new.isNotInvalid()) {
                     raise(
                         StateTransitionError.IllegalTransition(
                             from = old,
