@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.token.validation.ktor.v3)
     implementation("io.opentelemetry.instrumentation:opentelemetry-logback-mdc-1.0:2.16.0-alpha")
     implementation("io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations:1.33.0")
+    implementation("io.opentelemetry:opentelemetry-extension-kotlin:1.50.0")
 
     testImplementation(testLibs.bundles.kotest)
     testImplementation(testLibs.kotest.assertions.arrow)

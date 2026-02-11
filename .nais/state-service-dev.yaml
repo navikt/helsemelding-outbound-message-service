@@ -81,5 +81,3 @@ spec:
           namespace: aura
           cluster: dev-gcp
   env:
-    - name: OTEL_SERVICE_NAME
-      value: "state-service"

@@ -9,7 +9,10 @@ import arrow.core.right
 import arrow.fx.coroutines.parMap
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.GlobalOpenTelemetry
+import io.opentelemetry.context.Context
+import io.opentelemetry.extension.kotlin.asContextElement
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.ApprecInfo
 import no.nav.helsemelding.ediadapter.model.ErrorMessage
@@ -88,10 +91,11 @@ class PollerService(
 
     internal suspend fun pollAndProcessMessage(message: MessageState): Either<ErrorMessage, List<StatusInfo>> {
         val span = tracer.spanBuilder("Poll and process message").startSpan()
-        span.makeCurrent().use {
+        val otelCtx = Context.current().with(span)
+        return withContext(otelCtx.asContextElement()) {
             log.debug { "${message.logPrefix()} Fetching status from EDI Adapter" }
 
-            return ediAdapterClient.getMessageStatus(message.externalRefId)
+            ediAdapterClient.getMessageStatus(message.externalRefId)
                 .onRight { statuses ->
                     log.debug { "${message.logPrefix()} Received ${statuses.size} statuses" }
                     processMessage(statuses, message)
