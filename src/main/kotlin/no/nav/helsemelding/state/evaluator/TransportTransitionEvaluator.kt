@@ -10,101 +10,105 @@ import no.nav.helsemelding.state.model.isNotRejected
 
 /**
  * Evaluates whether a transition between two **resolved delivery lifecycle states**
- * is permitted according to the domain rules of the *transport axis*.
+ * is permitted according to the domain rules governing the *transport-driven* portion
+ * of the lifecycle.
  *
- * This evaluator does not compute or derive states. Both `old` and `new` states
- * must already represent the **overall** resolved delivery lifecycle
- * (`MessageDeliveryState`), typically obtained by passing a
- * [DeliveryEvaluationState] through `resolveDelivery()`.
+ * This evaluator does **not** compute or derive states. Both `old` and `new` values
+ * must already be fully resolved [MessageDeliveryState] instances — typically produced
+ * by resolving two [DeliveryEvaluationState] snapshots via `resolveDelivery()`.
  *
- * Its sole responsibility is to enforce the allowed transitions for the
- * transport-driven portion of the lifecycle and to prevent logically
- * inconsistent or backward state progressions.
+ * Its sole responsibility is to validate whether a proposed lifecycle transition is
+ * logically consistent with the permitted progression of the transport axis. This
+ * includes preventing regressions (e.g., `COMPLETED → PENDING`) and enforcing the
+ * terminal nature of certain states.
  *
- * The evaluator executes inside a [Raise] context, allowing illegal transitions
- * to be raised as [StateTransitionError.IllegalTransition] without throwing
- * exceptions and without introducing side effects.
+ * The evaluator runs inside a [Raise] context, allowing illegal transitions to surface
+ * as [StateTransitionError.IllegalTransition] values without throwing exceptions and
+ * without performing side-effects.
  *
- * ## Relationship to the Domain Model
+ * ---
  *
- * The delivery lifecycle is now determined by two orthogonal axes:
+ * ## Relationship to the Multi-Axis Domain Model
+ *
+ * Delivery lifecycle resolution is based on two orthogonal axes:
  *
  * - **TransportStatus**
- *   (NEW → PENDING → ACKED → REJECTED → INVALID)
+ *   (NEW → PENDING → ACKNOWLEDGED → REJECTED → INVALID)
  *
  * - **AppRecStatus?**
  *   (null → OK | OK_ERROR_IN_MESSAGE_PART | REJECTED)
  *
- * After a [DeliveryEvaluationState] has been resolved into a unified
- * [MessageDeliveryState], the *transport evaluator* enforces the allowed
- * transition rules for that lifecycle.
+ * These axes are combined to produce a unified [MessageDeliveryState], which expresses
+ * the final domain-level status of a message.
  *
- * This evaluator is intentionally unaware of `TransportStatus` or
- * `AppRecStatus`; cross-field consistency (e.g., "appRec requires transport ACKED")
- * is handled separately by [StateTransitionEvaluator].
+ * This evaluator operates **after** that resolution step. It does **not** inspect
+ * `TransportStatus` or `AppRecStatus` directly — cross-axis consistency and
+ * invariants (e.g., *“AppRec requires transport ACKNOWLEDGED”*) are enforced by
+ * [StateTransitionEvaluator].
  *
- * ## Internal Control State: UNCHANGED
+ * ---
  *
- * `UNCHANGED` is **not** part of the lifecycle and is treated as a no-op.
- * When `new == UNCHANGED`, evaluation short-circuits immediately because
- * no transition is being attempted. `UNCHANGED` is never considered an illegal
- * transition target and must never be persisted.
+ * ## No-Op and Control Flow
+ *
+ * This evaluator is intentionally unaware of “no transition” control signals such as
+ * `NextStateDecision.Unchanged`. The state machine (e.g., `determineNextState`) is
+ * responsible for deciding whether a transition should occur.
+ *
+ * This evaluator receives only **actual** resolved lifecycle states to validate.
+ *
+ * ---
  *
  * ## Allowed Transitions
  *
+ * The following transitions are permitted:
+ *
  * - **NEW → ANY**
- *   NEW is the initial resolved state. Any forward transition is permitted.
+ *   NEW is the initial lifecycle state and may transition forward freely.
  *
- * - **PENDING → PENDING | COMPLETED | REJECTED**
- *   A message still in flight may:
+ * - **PENDING → PENDING | COMPLETED | REJECTED | INVALID**
+ *   PENDING represents an in-flight delivery and may:
  *   - remain pending,
- *   - complete (application receipt OK),
- *   - or be rejected (transport-level or apprec-level).
+ *   - complete (application-level acceptance),
+ *   - be rejected,
+ *   - or be marked invalid.
  *
- *   A regression back to NEW is *not* permitted.
+ *   Regression to NEW is not permitted.
  *
  * - **COMPLETED → COMPLETED**
- *   COMPLETED is terminal. After a successful application receipt, no further
- *   state changes are allowed.
+ *   COMPLETED is terminal. No further transitions are allowed.
  *
  * - **REJECTED → REJECTED**
  *   REJECTED is terminal. No further transitions are allowed.
  *
  * - **INVALID → INVALID**
- *   INVALID is terminal. It has no outgoing transitions.
+ *   INVALID is terminal. No further transitions are allowed.
+ *
+ * ---
  *
  * ## Illegal Transitions
  *
- * Any transition not covered above is illegal and results in a
- * [StateTransitionError.IllegalTransition] being raised through the [Raise] context.
+ * Any transition not explicitly permitted above is illegal and results in a
+ * [StateTransitionError.IllegalTransition] raised through the [Raise] context.
  *
- * This ensures that domain invariants are preserved and that invalid progressions
- * cannot be persisted, published, or propagated.
+ * This ensures lifecycle monotonicity and prevents invalid state progressions from
+ * being persisted, emitted, or propagated further in the system.
+ *
+ * ---
  *
  * @receiver Raise<StateTransitionError>
- *   The Raise context used to surface illegal transitions without throwing.
+ *   The context used to surface illegal transitions in a typed, non-throwing manner.
  *
  * @param old
- *   The previously persisted **resolved** delivery lifecycle state.
+ *   The previously persisted, fully resolved [MessageDeliveryState].
  *
  * @param new
- *   The newly evaluated resolved state, or `UNCHANGED` when no transition
- *   is required.
+ *   The newly resolved [MessageDeliveryState] to validate.
  *
  * @throws StateTransitionError.IllegalTransition
- *   Raised through [Raise] when a transition from `old` to `new` is not allowed.
+ *   When the transition from `old` to `new` is not allowed.
  */
 class TransportTransitionEvaluator {
     fun Raise<StateTransitionError>.evaluate(old: MessageDeliveryState, new: MessageDeliveryState) {
-        if (old == MessageDeliveryState.UNCHANGED) {
-            raise(
-                StateTransitionError.IllegalCombinedState(
-                    "Old state can never be UNCHANGED (persisted control state)"
-                )
-            )
-        }
-        if (new == MessageDeliveryState.UNCHANGED) return
-
         when (old) {
             MessageDeliveryState.NEW -> Unit
 

@@ -11,8 +11,7 @@ enum class MessageDeliveryState {
     PENDING,
     COMPLETED,
     REJECTED,
-    INVALID,
-    UNCHANGED
+    INVALID
 }
 
 fun MessageDeliveryState.isNew(): Boolean = this == NEW
