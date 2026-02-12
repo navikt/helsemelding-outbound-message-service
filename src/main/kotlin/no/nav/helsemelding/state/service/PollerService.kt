@@ -24,14 +24,13 @@ import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.ApprecStatusMessage
 import no.nav.helsemelding.state.model.DeliveryEvaluationState
 import no.nav.helsemelding.state.model.ExternalDeliveryState
-import no.nav.helsemelding.state.model.MessageDeliveryState
 import no.nav.helsemelding.state.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.state.model.MessageDeliveryState.INVALID
 import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
-import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
 import no.nav.helsemelding.state.model.MessageState
+import no.nav.helsemelding.state.model.NextStateDecision
 import no.nav.helsemelding.state.model.TransportStatusMessage
 import no.nav.helsemelding.state.model.UpdateState
 import no.nav.helsemelding.state.model.formatExternal
@@ -121,17 +120,20 @@ class PollerService(
 
         log.debug { message.formatExternal(deliveryState, appRecStatus) }
 
-        val nextState = determineNextState(message, deliveryState, appRecStatus)
+        val nextDecision = determineNextState(message, deliveryState, appRecStatus)
 
-        log.debug { "${message.logPrefix()} Next state decision: $nextState" }
+        log.debug { "${message.logPrefix()} Next state decision: $nextDecision" }
 
-        when (nextState) {
-            UNCHANGED -> log.debug { message.formatUnchanged() }
-            NEW -> log.debug { message.formatNew() }
-            PENDING -> pending(message, deliveryState, appRecStatus)
-            COMPLETED -> completed(message, deliveryState, appRecStatus)
-            REJECTED -> rejected(message, deliveryState, appRecStatus)
-            INVALID -> log.error { message.formatInvalidState() }
+        when (nextDecision) {
+            NextStateDecision.Unchanged -> log.debug { message.formatUnchanged() }
+            is NextStateDecision.Transition ->
+                when (nextDecision.to) {
+                    NEW -> log.debug { message.formatNew() }
+                    PENDING -> pending(message, deliveryState, appRecStatus)
+                    COMPLETED -> completed(message, deliveryState, appRecStatus)
+                    REJECTED -> rejected(message, deliveryState, appRecStatus)
+                    INVALID -> log.error { message.formatInvalidState() }
+                }
         }
     }
 
@@ -139,7 +141,7 @@ class PollerService(
         message: MessageState,
         externalDeliveryState: ExternalDeliveryState?,
         appRecStatus: AppRecStatus?
-    ): MessageDeliveryState =
+    ): NextStateDecision =
         with(stateEvaluatorService) {
             recover({
                 val old = evaluate(message)
@@ -148,7 +150,7 @@ class PollerService(
                 determineNextState(old, new).withLogging(message, old, new)
             }) { e: StateTransitionError ->
                 log.error { "Failed evaluating state: ${e.withMessageContext(message)}" }
-                INVALID
+                NextStateDecision.Transition(INVALID)
             }
         }
 
@@ -286,11 +288,11 @@ class PollerService(
             apprec = apprecInfo
         )
 
-    private fun MessageDeliveryState.withLogging(
+    private fun NextStateDecision.withLogging(
         message: MessageState,
         oldEvaluationState: DeliveryEvaluationState,
         newEvaluationState: DeliveryEvaluationState
-    ): MessageDeliveryState = also { nextState ->
+    ): NextStateDecision = also { nextState ->
         log.debug {
             "${message.logPrefix()} Evaluated state: " +
                 "old=(transport=${oldEvaluationState.transport}, appRec=${oldEvaluationState.appRec}), " +
