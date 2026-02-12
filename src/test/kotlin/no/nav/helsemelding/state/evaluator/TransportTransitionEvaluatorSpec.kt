@@ -4,14 +4,12 @@ import arrow.core.Either.Right
 import arrow.core.raise.either
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import no.nav.helsemelding.state.StateTransitionError.IllegalCombinedState
 import no.nav.helsemelding.state.StateTransitionError.IllegalTransition
 import no.nav.helsemelding.state.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.state.model.MessageDeliveryState.INVALID
 import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
-import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
 import no.nav.helsemelding.state.model.isNew
 import no.nav.helsemelding.state.model.isPending
 import no.nav.helsemelding.state.shouldBeLeftWhere
@@ -134,47 +132,9 @@ class TransportTransitionEvaluatorSpec : StringSpec(
             result shouldBeLeftWhere { it is IllegalTransition }
         }
 
-        "UNCHANGED as old state is not allowed" {
-            val result = either {
-                with(evaluator) { evaluate(UNCHANGED, NEW) }
-            }
-
-            result shouldBeLeftWhere { it is IllegalCombinedState }
-        }
-
-        "COMPLETED → UNCHANGED is allowed" {
-            either {
-                with(evaluator) { evaluate(COMPLETED, UNCHANGED) }
-            } shouldBe Right(Unit)
-        }
-
-        "PENDING → UNCHANGED is allowed" {
-            either {
-                with(evaluator) { evaluate(PENDING, UNCHANGED) }
-            } shouldBe Right(Unit)
-        }
-
-        "REJECTED → UNCHANGED is allowed" {
-            either {
-                with(evaluator) { evaluate(REJECTED, UNCHANGED) }
-            } shouldBe Right(Unit)
-        }
-
-        "NEW → UNCHANGED is allowed" {
-            either {
-                with(evaluator) { evaluate(NEW, UNCHANGED) }
-            } shouldBe Right(Unit)
-        }
-
         "INVALID → INVALID is allowed" {
             either {
                 with(evaluator) { evaluate(INVALID, INVALID) }
-            } shouldBe Right(Unit)
-        }
-
-        "INVALID → UNCHANGED is allowed" {
-            either {
-                with(evaluator) { evaluate(INVALID, UNCHANGED) }
             } shouldBe Right(Unit)
         }
 
@@ -200,14 +160,6 @@ class TransportTransitionEvaluatorSpec : StringSpec(
             either {
                 with(evaluator) { evaluate(INVALID, REJECTED) }
             } shouldBeLeftWhere { it is IllegalTransition }
-        }
-
-        "UNCHANGED → UNCHANGED is not allowed" {
-            val result = either {
-                with(evaluator) { evaluate(UNCHANGED, UNCHANGED) }
-            }
-
-            result shouldBeLeftWhere { it is IllegalCombinedState }
         }
     }
 )

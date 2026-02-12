@@ -37,7 +37,7 @@ interface MessageStateService {
     suspend fun createInitialState(createState: CreateState): MessageStateSnapshot
 
     /**
-     * Records an update to the external delivery state or application receipt status
+     * Records an update to the external delivery state or application receipt (apprec) status
      * for an existing message.
      *
      * Called when the external system reports a new status for a previously registered

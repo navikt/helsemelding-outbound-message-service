@@ -17,9 +17,10 @@ import no.nav.helsemelding.state.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
-import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
 import no.nav.helsemelding.state.model.MessageState
 import no.nav.helsemelding.state.model.MessageType.DIALOG
+import no.nav.helsemelding.state.model.NextStateDecision.Transition
+import no.nav.helsemelding.state.model.NextStateDecision.Unchanged
 import no.nav.helsemelding.state.model.TransportStatus
 import no.nav.helsemelding.state.shouldBeLeftWhere
 import java.net.URI
@@ -97,7 +98,7 @@ class StateEvaluatorServiceSpec : StringSpec(
             val old = DeliveryEvaluationState(transport = TransportStatus.PENDING, appRec = null)
             val new = DeliveryEvaluationState(transport = TransportStatus.PENDING, appRec = null)
 
-            either { with(service) { determineNextState(old, new) } } shouldBe Right(UNCHANGED)
+            either { with(service) { determineNextState(old, new) } } shouldBe Right(Unchanged)
         }
 
         "determineNextState -> UNCHANGED when resolved states are equal (COMPLETED -> COMPLETED)" {
@@ -110,14 +111,14 @@ class StateEvaluatorServiceSpec : StringSpec(
                 appRec = AppRecStatus.OK
             )
 
-            either { with(service) { determineNextState(old, new) } } shouldBe Right(UNCHANGED)
+            either { with(service) { determineNextState(old, new) } } shouldBe Right(Unchanged)
         }
 
         "determineNextState -> new resolved state on valid transition (NEW -> PENDING)" {
             val old = DeliveryEvaluationState(transport = TransportStatus.NEW, appRec = null)
             val new = DeliveryEvaluationState(transport = TransportStatus.PENDING, appRec = null)
 
-            either { with(service) { determineNextState(old, new) } } shouldBe Right(PENDING)
+            either { with(service) { determineNextState(old, new) } } shouldBe Right(Transition(PENDING))
         }
 
         "determineNextState -> new resolved state on valid transition (PENDING -> COMPLETED)" {
@@ -130,7 +131,7 @@ class StateEvaluatorServiceSpec : StringSpec(
                 appRec = AppRecStatus.OK
             )
 
-            either { with(service) { determineNextState(old, new) } } shouldBe Right(COMPLETED)
+            either { with(service) { determineNextState(old, new) } } shouldBe Right(Transition(COMPLETED))
         }
 
         "determineNextState raises on illegal resolved transition (PENDING -> NEW)" {

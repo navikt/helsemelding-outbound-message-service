@@ -7,9 +7,8 @@ import no.nav.helsemelding.state.evaluator.TransportStatusTranslator
 import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.DeliveryEvaluationState
 import no.nav.helsemelding.state.model.ExternalDeliveryState
-import no.nav.helsemelding.state.model.MessageDeliveryState
-import no.nav.helsemelding.state.model.MessageDeliveryState.UNCHANGED
 import no.nav.helsemelding.state.model.MessageState
+import no.nav.helsemelding.state.model.NextStateDecision
 import no.nav.helsemelding.state.model.resolveDelivery
 
 class StateEvaluatorService(
@@ -36,12 +35,16 @@ class StateEvaluatorService(
     fun Raise<StateTransitionError>.determineNextState(
         old: DeliveryEvaluationState,
         new: DeliveryEvaluationState
-    ): MessageDeliveryState =
+    ): NextStateDecision =
         with(transitionValidator) {
             evaluate(old, new)
             val oldResolvedState = old.resolveDelivery().state
             val newResolvedState = new.resolveDelivery().state
 
-            if (oldResolvedState != newResolvedState) newResolvedState else UNCHANGED
+            if (oldResolvedState != newResolvedState) {
+                NextStateDecision.Transition(newResolvedState)
+            } else {
+                NextStateDecision.Unchanged
+            }
         }
 }
