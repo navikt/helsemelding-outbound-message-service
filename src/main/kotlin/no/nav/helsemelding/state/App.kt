@@ -8,6 +8,7 @@ import arrow.resilience.Schedule
 import io.github.nomisRev.kafka.receiver.KafkaReceiver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.Application
+import io.ktor.server.engine.logError
 import io.ktor.server.netty.Netty
 import io.ktor.utils.io.CancellationException
 import io.micrometer.prometheus.PrometheusMeterRegistry
@@ -28,10 +29,11 @@ import no.nav.helsemelding.state.service.MessageStateService
 import no.nav.helsemelding.state.service.PollerService
 import no.nav.helsemelding.state.service.StateEvaluatorService
 import no.nav.helsemelding.state.service.TransactionalMessageStateService
+import no.nav.helsemelding.state.util.ExtendedLogger
 import no.nav.helsemelding.state.util.coroutineScope
 import org.jetbrains.exposed.v1.jdbc.Database
 
-private val log = KotlinLogging.logger {}
+private val log = ExtendedLogger(KotlinLogging.logger {})
 
 fun main() = SuspendApp {
     result {
