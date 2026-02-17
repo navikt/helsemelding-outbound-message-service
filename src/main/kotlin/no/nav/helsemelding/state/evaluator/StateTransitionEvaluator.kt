@@ -6,6 +6,7 @@ import no.nav.helsemelding.state.model.DeliveryEvaluationState
 import no.nav.helsemelding.state.model.isNotAcknowledged
 import no.nav.helsemelding.state.model.isNotNull
 import no.nav.helsemelding.state.model.resolveDelivery
+import no.nav.helsemelding.state.model.toDeliveryState
 
 /**
  * Evaluates whether a transition between two **multi-axis delivery states**
@@ -125,6 +126,6 @@ class StateTransitionEvaluator(
         val oldResolved = old.resolveDelivery()
         val newResolved = new.resolveDelivery()
 
-        with(transportValidator) { evaluate(oldResolved.state, newResolved.state) }
+        with(transportValidator) { evaluate(oldResolved.toDeliveryState(), newResolved.toDeliveryState()) }
     }
 }

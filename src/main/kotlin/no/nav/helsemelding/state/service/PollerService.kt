@@ -31,6 +31,8 @@ import no.nav.helsemelding.state.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.state.model.MessageDeliveryState.REJECTED
 import no.nav.helsemelding.state.model.MessageState
 import no.nav.helsemelding.state.model.NextStateDecision
+import no.nav.helsemelding.state.model.NextStateDecision.Rejected.AppRec
+import no.nav.helsemelding.state.model.NextStateDecision.Rejected.Transport
 import no.nav.helsemelding.state.model.TransportStatusMessage
 import no.nav.helsemelding.state.model.UpdateState
 import no.nav.helsemelding.state.model.formatExternal
@@ -130,9 +132,12 @@ class PollerService(
                     NEW -> log.debug { message.formatNew() }
                     PENDING -> pending(message, deliveryState, appRecStatus)
                     COMPLETED -> completed(message, deliveryState, appRecStatus)
-                    REJECTED -> rejected(message, deliveryState, appRecStatus)
                     INVALID -> log.error { message.formatInvalidState() }
+                    REJECTED -> error("Use NextStateDecision.Rejected.Transport/AppRec instead of Transition(REJECTED)")
                 }
+
+            Transport -> rejected(message, deliveryState, Transport)
+            AppRec -> rejected(message, deliveryState, AppRec)
         }
     }
 
@@ -193,22 +198,26 @@ class PollerService(
 
     private suspend fun rejected(
         message: MessageState,
-        newState: ExternalDeliveryState,
-        newAppRecStatus: AppRecStatus?
+        externalDeliveryState: ExternalDeliveryState,
+        rejected: NextStateDecision.Rejected
     ) {
         log.warn { message.formatTransition(REJECTED) }
+
         messageStateService.recordStateChange(
             UpdateState(
                 message.externalRefId,
                 message.messageType,
                 message.externalDeliveryState,
-                newState,
+                externalDeliveryState,
                 message.appRecStatus,
-                newAppRecStatus
+                message.appRecStatus
             )
         )
 
-        publishTransportStatus(message.id, newState)
+        when (rejected) {
+            AppRec -> publishApprecStatus(message)
+            Transport -> publishTransportStatus(message.id, externalDeliveryState)
+        }
     }
 
     private suspend fun publishApprecStatus(message: MessageState): Either<StateError, RecordMetadata> =

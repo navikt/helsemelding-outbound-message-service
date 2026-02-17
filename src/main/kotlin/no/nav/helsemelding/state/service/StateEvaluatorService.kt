@@ -38,11 +38,11 @@ class StateEvaluatorService(
     ): NextStateDecision =
         with(transitionValidator) {
             evaluate(old, new)
-            val oldResolvedState = old.resolveDelivery().state
-            val newResolvedState = new.resolveDelivery().state
+            val oldResolvedDelivery = old.resolveDelivery()
+            val newResolvedDelivery = new.resolveDelivery()
 
-            if (oldResolvedState != newResolvedState) {
-                NextStateDecision.Transition(newResolvedState)
+            if (oldResolvedDelivery != newResolvedDelivery) {
+                newResolvedDelivery.decision
             } else {
                 NextStateDecision.Unchanged
             }

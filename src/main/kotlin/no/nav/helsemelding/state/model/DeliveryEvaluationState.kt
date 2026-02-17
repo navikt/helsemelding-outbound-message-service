@@ -1,17 +1,24 @@
 package no.nav.helsemelding.state.model
 
+import no.nav.helsemelding.state.model.NextStateDecision.Transition
+
 data class DeliveryEvaluationState(
     val transport: TransportStatus,
     val appRec: AppRecStatus?
 )
 
+data class DeliveryResolution(
+    val decision: NextStateDecision,
+    val pendingReason: PendingReason? = null
+)
+
 fun DeliveryEvaluationState.resolveDelivery(): DeliveryResolution =
     when (transport) {
-        TransportStatus.NEW -> DeliveryResolution(MessageDeliveryState.NEW)
+        TransportStatus.NEW -> DeliveryResolution(Transition(MessageDeliveryState.NEW))
 
         TransportStatus.PENDING ->
             DeliveryResolution(
-                state = MessageDeliveryState.PENDING,
+                decision = Transition(MessageDeliveryState.PENDING),
                 pendingReason = PendingReason.WAITING_FOR_TRANSPORT_ACKNOWLEDGEMENT
             )
 
@@ -19,20 +26,25 @@ fun DeliveryEvaluationState.resolveDelivery(): DeliveryResolution =
             when {
                 appRec.isNull() ->
                     DeliveryResolution(
-                        state = MessageDeliveryState.PENDING,
+                        decision = Transition(MessageDeliveryState.PENDING),
                         pendingReason = PendingReason.WAITING_FOR_APPREC
                     )
 
-                appRec.isRejected() ->
-                    DeliveryResolution(MessageDeliveryState.REJECTED)
+                appRec.isRejected() -> DeliveryResolution(NextStateDecision.Rejected.AppRec)
 
                 appRec.isOk() || appRec.isOkErrorInMessagePart() ->
-                    DeliveryResolution(MessageDeliveryState.COMPLETED)
+                    DeliveryResolution(Transition(MessageDeliveryState.COMPLETED))
 
-                else ->
-                    DeliveryResolution(MessageDeliveryState.PENDING)
+                else -> DeliveryResolution(Transition(MessageDeliveryState.PENDING))
             }
 
-        TransportStatus.REJECTED -> DeliveryResolution(MessageDeliveryState.REJECTED)
-        TransportStatus.INVALID -> DeliveryResolution(MessageDeliveryState.INVALID)
+        TransportStatus.REJECTED -> DeliveryResolution(NextStateDecision.Rejected.Transport)
+        TransportStatus.INVALID -> DeliveryResolution(Transition(MessageDeliveryState.INVALID))
+    }
+
+fun DeliveryResolution.toDeliveryState(): MessageDeliveryState =
+    when (decision) {
+        is Transition -> decision.to
+        is NextStateDecision.Rejected -> MessageDeliveryState.REJECTED
+        NextStateDecision.Unchanged -> error("Unchanged is not a resolvable delivery state")
     }
