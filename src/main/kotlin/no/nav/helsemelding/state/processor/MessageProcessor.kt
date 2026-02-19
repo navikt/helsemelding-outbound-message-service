@@ -26,6 +26,7 @@ import no.nav.helsemelding.state.service.MessageStateService
 import no.nav.helsemelding.state.util.withSpan
 import java.net.URI
 import kotlin.io.encoding.Base64
+import kotlin.system.measureNanoTime
 import kotlin.uuid.Uuid
 
 private val log = KotlinLogging.logger {}
@@ -73,20 +74,24 @@ class MessageProcessor(
             contentTransferEncoding = BASE64_ENCODING
         )
 
-        ediAdapterClient.postMessage(postMessageRequest)
-            .onRight { metadata ->
-                val externalRefId = metadata.id
-                log.info {
-                    "externalRefId=$externalRefId Successfully sent dialog message (dialogMessageId=${dialogMessage.id}) to edi adapter"
+        val durationNanos = measureNanoTime {
+            ediAdapterClient.postMessage(postMessageRequest)
+                .onRight { metadata ->
+                    val externalRefId = metadata.id
+                    log.info {
+                        "externalRefId=$externalRefId Successfully sent dialog message (dialogMessageId=${dialogMessage.id}) to edi adapter"
+                    }
+                    initializeState(metadata, dialogMessage.id)
                 }
-                initializeState(metadata, dialogMessage.id)
-            }
-            .onLeft { error ->
-                log.error {
-                    "dialogMessageId=${dialogMessage.id} Failed sending message to edi adapter: $error"
+                .onLeft { error ->
+                    log.error {
+                        "dialogMessageId=${dialogMessage.id} Failed sending message to edi adapter: $error"
+                    }
+                    metrics.registerOutgoingMessageFailed(ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED)
                 }
-                metrics.registerOutgoingMessageFailed(ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED)
-            }
+        }
+
+        metrics.registerPostMessageDuration(durationNanos)
     }
 
     private suspend fun initializeState(metadata: Metadata, dialogMessageId: Uuid) {

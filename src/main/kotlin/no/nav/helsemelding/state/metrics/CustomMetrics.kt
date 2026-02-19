@@ -3,12 +3,15 @@ package no.nav.helsemelding.state.metrics
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
+import java.util.concurrent.TimeUnit
 
 private val log = KotlinLogging.logger {}
 
 interface Metrics {
     fun registerOutgoingMessageReceived()
     fun registerOutgoingMessageFailed(errorType: ErrorTypeTag)
+    fun registerPostMessageDuration(durationNanos: Long)
 }
 
 class CustomMetrics(val registry: MeterRegistry) : Metrics {
@@ -26,6 +29,14 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
             .register(registry)
             .increment()
     }
+
+    override fun registerPostMessageDuration(durationNanos: Long) {
+        Timer.builder("helsemelding_post_message_duration")
+            .description("Time spent posting a message to EDI Adapter")
+            .publishPercentileHistogram()
+            .register(registry)
+            .record(durationNanos, TimeUnit.NANOSECONDS)
+    }
 }
 
 class FakeMetrics() : Metrics {
@@ -35,5 +46,9 @@ class FakeMetrics() : Metrics {
 
     override fun registerOutgoingMessageFailed(errorType: ErrorTypeTag) {
         log.info { "helsemelding_outgoing_messages_failed metric is registered with error_type: ${errorType.value}" }
+    }
+
+    override fun registerPostMessageDuration(durationNanos: Long) {
+        log.info { "helsemelding_post_message_duration metric is registered with duration: $durationNanos nanoseconds" }
     }
 }
