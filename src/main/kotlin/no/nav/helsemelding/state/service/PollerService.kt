@@ -24,6 +24,7 @@ import no.nav.helsemelding.state.model.AppRecStatus
 import no.nav.helsemelding.state.model.ApprecStatusMessage
 import no.nav.helsemelding.state.model.DeliveryEvaluationState
 import no.nav.helsemelding.state.model.ExternalDeliveryState
+import no.nav.helsemelding.state.model.ExternalStatus
 import no.nav.helsemelding.state.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.state.model.MessageDeliveryState.INVALID
 import no.nav.helsemelding.state.model.MessageDeliveryState.NEW
@@ -103,54 +104,49 @@ class PollerService(
         externalStatuses: List<StatusInfo>?,
         message: MessageState
     ) {
-        val lastStatus = when (val lastExternal = externalStatuses?.lastOrNull()) {
-            null -> {
-                log.warn { "${message.logPrefix()} No status info returned from EDI Adapter" }
-                return
-            }
-
-            else -> lastExternal
+        val lastStatus = externalStatuses?.lastOrNull() ?: run {
+            log.warn { "${message.logPrefix()} No status info returned from EDI Adapter" }
+            return
         }
 
         log.debug { "${message.logPrefix()} Processing translated status: $lastStatus" }
 
-        val externalStatus = lastStatus.translate()
-        val deliveryState = externalStatus.deliveryState
-        val appRecStatus = externalStatus.appRecStatus
+        val external = lastStatus.translate()
+        log.debug { message.formatExternal(external.deliveryState, external.appRecStatus) }
 
-        log.debug { message.formatExternal(deliveryState, appRecStatus) }
+        val decision = determineNextState(message, external.deliveryState, external.appRecStatus)
+        log.debug { "${message.logPrefix()} Next state decision: $decision" }
 
-        val nextDecision = determineNextState(message, deliveryState, appRecStatus)
+        handleDecision(message, external, decision)
+    }
 
-        log.debug { "${message.logPrefix()} Next state decision: $nextDecision" }
+    private suspend fun handleDecision(
+        message: MessageState,
+        external: ExternalStatus,
+        decision: NextStateDecision
+    ) {
+        when (decision) {
+            NextStateDecision.Unchanged -> onUnchanged(message)
+            is NextStateDecision.Transition -> onTransition(message, external, decision)
+            is NextStateDecision.Pending -> onPending(message, external, decision)
+            Rejected.AppRec -> onRejectedAppRec(message, external)
+            Rejected.Transport -> onRejectedTransport(message, external)
+        }
+    }
 
-        when (nextDecision) {
-            NextStateDecision.Unchanged -> log.debug { message.formatUnchanged() }
-            is NextStateDecision.Transition ->
-                when (nextDecision.to) {
-                    NEW -> log.debug { message.formatNew() }
-                    COMPLETED -> completed(message, deliveryState, appRecStatus)
-                    INVALID -> log.error { message.formatInvalidState() }
-                    PENDING -> error("Use NextStateDecision.Pending.Transport/AppRec instead of Transition(PENDING)")
-                    REJECTED -> error("Use NextStateDecision.Rejected.Transport/AppRec instead of Transition(REJECTED)")
-                }
+    private fun onUnchanged(message: MessageState) = log.debug { message.formatUnchanged() }
 
-            is NextStateDecision.Pending -> {
-                log.info { message.formatTransition(nextDecision) }
-                pending(message, deliveryState, appRecStatus)
-            }
-
-            Rejected.AppRec -> {
-                log.warn { message.formatTransition(nextDecision) }
-                rejected(message, deliveryState, appRecStatus)
-                publishApprecStatus(message)
-            }
-
-            Rejected.Transport -> {
-                log.warn { message.formatTransition(nextDecision) }
-                rejected(message, deliveryState, appRecStatus)
-                publishTransportStatus(message.id, deliveryState)
-            }
+    private suspend fun onTransition(
+        message: MessageState,
+        external: ExternalStatus,
+        decision: NextStateDecision.Transition
+    ) {
+        when (decision.to) {
+            NEW -> log.debug { message.formatNew() }
+            COMPLETED -> completed(message, external.deliveryState, external.appRecStatus)
+            INVALID -> log.error { message.formatInvalidState() }
+            PENDING -> error("Use NextStateDecision.Pending")
+            REJECTED -> error("Use NextStateDecision.Rejected")
         }
     }
 
@@ -170,6 +166,27 @@ class PollerService(
                 NextStateDecision.Transition(INVALID)
             }
         }
+
+    private suspend fun onPending(
+        message: MessageState,
+        external: ExternalStatus,
+        decision: NextStateDecision.Pending
+    ) {
+        log.info { message.formatTransition(decision) }
+        pending(message, external.deliveryState, external.appRecStatus)
+    }
+
+    private suspend fun onRejectedAppRec(message: MessageState, external: ExternalStatus) {
+        log.warn { message.formatTransition(Rejected.AppRec) }
+        rejected(message, external.deliveryState, external.appRecStatus)
+        publishApprecStatus(message)
+    }
+
+    private suspend fun onRejectedTransport(message: MessageState, external: ExternalStatus) {
+        log.warn { message.formatTransition(Rejected.Transport) }
+        rejected(message, external.deliveryState, external.appRecStatus)
+        publishTransportStatus(message.id, external.deliveryState)
+    }
 
     private suspend fun pending(
         message: MessageState,
