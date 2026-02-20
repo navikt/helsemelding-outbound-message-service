@@ -12,6 +12,8 @@ interface Metrics {
     fun registerOutgoingMessageReceived()
     fun registerOutgoingMessageFailed(errorType: ErrorTypeTag)
     fun registerPostMessageDuration(durationNanos: Long)
+    fun registerMessageSigningDuration(durationNanos: Long)
+    fun registerOutgoingMessageProcessingDuration(durationNanos: Long)
 }
 
 class CustomMetrics(val registry: MeterRegistry) : Metrics {
@@ -37,6 +39,22 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
             .register(registry)
             .record(durationNanos, TimeUnit.NANOSECONDS)
     }
+
+    override fun registerMessageSigningDuration(durationNanos: Long) {
+        Timer.builder("helsemelding_message_signing_duration")
+            .description("Time spent sending a message to the Payload Signing Service")
+            .publishPercentileHistogram()
+            .register(registry)
+            .record(durationNanos, TimeUnit.NANOSECONDS)
+    }
+
+    override fun registerOutgoingMessageProcessingDuration(durationNanos: Long) {
+        Timer.builder("helsemelding_outgoing_message_processing_duration")
+            .description("Time spent processing an outgoing message")
+            .publishPercentileHistogram()
+            .register(registry)
+            .record(durationNanos, TimeUnit.NANOSECONDS)
+    }
 }
 
 class FakeMetrics() : Metrics {
@@ -49,6 +67,14 @@ class FakeMetrics() : Metrics {
     }
 
     override fun registerPostMessageDuration(durationNanos: Long) {
-        log.info { "helsemelding_post_message_duration metric is registered with duration: $durationNanos nanoseconds" }
+        log.info { "helsemelding_post_message_duration metric is registered with duration: $durationNanos ns" }
+    }
+
+    override fun registerMessageSigningDuration(durationNanos: Long) {
+        log.info { "helsemelding_message_signing_duration metric is registered with duration: $durationNanos ns" }
+    }
+
+    override fun registerOutgoingMessageProcessingDuration(durationNanos: Long) {
+        log.info { "helsemelding_outgoing_message_processing_duration metric is registered with duration: $durationNanos ns" }
     }
 }
