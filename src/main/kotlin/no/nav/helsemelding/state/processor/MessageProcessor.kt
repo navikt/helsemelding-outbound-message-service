@@ -1,5 +1,6 @@
 package no.nav.helsemelding.state.processor
 
+import arrow.core.Either
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.opentelemetry.api.GlobalOpenTelemetry
@@ -11,11 +12,16 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
+import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
 import no.nav.helsemelding.payloadsigning.client.PayloadSigningClient
 import no.nav.helsemelding.payloadsigning.model.Direction.OUT
+import no.nav.helsemelding.payloadsigning.model.MessageSigningError
 import no.nav.helsemelding.payloadsigning.model.PayloadRequest
+import no.nav.helsemelding.payloadsigning.model.PayloadResponse
+import no.nav.helsemelding.state.metrics.ErrorTypeTag
+import no.nav.helsemelding.state.metrics.Metrics
 import no.nav.helsemelding.state.model.CreateState
 import no.nav.helsemelding.state.model.DialogMessage
 import no.nav.helsemelding.state.model.MessageType.DIALOG
@@ -24,6 +30,7 @@ import no.nav.helsemelding.state.service.MessageStateService
 import no.nav.helsemelding.state.util.withSpan
 import java.net.URI
 import kotlin.io.encoding.Base64
+import kotlin.system.measureNanoTime
 import kotlin.uuid.Uuid
 
 private val log = KotlinLogging.logger {}
@@ -35,11 +42,17 @@ class MessageProcessor(
     private val messageReceiver: MessageReceiver,
     private val messageStateService: MessageStateService,
     private val ediAdapterClient: EdiAdapterClient,
-    private val payloadSigningClient: PayloadSigningClient
+    private val payloadSigningClient: PayloadSigningClient,
+    private val metrics: Metrics
 ) {
     fun processMessages(scope: CoroutineScope): Job =
         messageFlow()
-            .onEach { message -> processAndSendMessage(message) }
+            .onEach { message ->
+                val durationNanos = measureNanoTime {
+                    processAndSendMessage(message)
+                }
+                metrics.registerOutgoingMessageProcessingDuration(durationNanos)
+            }
             .flowOn(Dispatchers.IO)
             .launchIn(scope)
 
@@ -48,7 +61,14 @@ class MessageProcessor(
     internal suspend fun processAndSendMessage(dialogMessage: DialogMessage) {
         tracer.withSpan("Process and send message") {
             log.info { "dialogMessageId=${dialogMessage.id} Processing started" }
-            payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
+
+            var result: Either<MessageSigningError, PayloadResponse>
+            val durationNanos = measureNanoTime {
+                result = payloadSigningClient.signPayload(PayloadRequest(OUT, dialogMessage.payload))
+            }
+            metrics.registerMessageSigningDuration(durationNanos)
+
+            result
                 .onRight { payloadResponse ->
                     log.info { "dialogMessageId=${dialogMessage.id} Successfully signed" }
                     val signedXml = payloadResponse.bytes
@@ -58,6 +78,7 @@ class MessageProcessor(
                     log.error {
                         "dialogMessageId=${dialogMessage.id} Failed signing message: $error"
                     }
+                    metrics.registerOutgoingMessageFailed(ErrorTypeTag.PAYLOAD_SIGNING_FAILED)
                 }
         }
     }
@@ -69,7 +90,13 @@ class MessageProcessor(
             contentTransferEncoding = BASE64_ENCODING
         )
 
-        ediAdapterClient.postMessage(postMessageRequest)
+        var result: Either<ErrorMessage, Metadata>
+        val durationNanos = measureNanoTime {
+            result = ediAdapterClient.postMessage(postMessageRequest)
+        }
+        metrics.registerPostMessageDuration(durationNanos)
+
+        result
             .onRight { metadata ->
                 val externalRefId = metadata.id
                 log.info {
@@ -81,23 +108,31 @@ class MessageProcessor(
                 log.error {
                     "dialogMessageId=${dialogMessage.id} Failed sending message to edi adapter: $error"
                 }
+                metrics.registerOutgoingMessageFailed(ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED)
             }
     }
 
     private suspend fun initializeState(metadata: Metadata, dialogMessageId: Uuid) {
-        val snapshot = messageStateService.createInitialState(
-            CreateState(
-                id = dialogMessageId,
-                externalRefId = metadata.id,
-                messageType = DIALOG,
-                externalMessageUrl = URI.create(metadata.location).toURL()
+        try {
+            val snapshot = messageStateService.createInitialState(
+                CreateState(
+                    id = dialogMessageId,
+                    externalRefId = metadata.id,
+                    messageType = DIALOG,
+                    externalMessageUrl = URI.create(metadata.location).toURL()
+                )
             )
-        )
 
-        val externalRefId = snapshot.messageState.externalRefId
+            val externalRefId = snapshot.messageState.externalRefId
 
-        log.info {
-            "externalRefId=$externalRefId State initialized (dialogMessageId=$dialogMessageId)"
+            log.info {
+                "externalRefId=$externalRefId State initialized (dialogMessageId=$dialogMessageId)"
+            }
+        } catch (error: Throwable) {
+            log.error {
+                "dialogMessageId=$dialogMessageId Failed initializing state: ${error.stackTraceToString()}"
+            }
+            metrics.registerOutgoingMessageFailed(ErrorTypeTag.STATE_INITIALIZATION_FAILED)
         }
     }
 }

@@ -13,6 +13,7 @@ import no.nav.helsemelding.payloadsigning.model.MessageSigningError
 import no.nav.helsemelding.payloadsigning.model.PayloadResponse
 import no.nav.helsemelding.state.FakeEdiAdapterClient
 import no.nav.helsemelding.state.FakePayloadSigningClient
+import no.nav.helsemelding.state.metrics.FakeMetrics
 import no.nav.helsemelding.state.model.DialogMessage
 import no.nav.helsemelding.state.receiver.fakeMessageReceiver
 import no.nav.helsemelding.state.service.FakeTransactionalMessageStateService
@@ -25,11 +26,13 @@ class MessageProcessorSpec : StringSpec(
             val messageStateService = FakeTransactionalMessageStateService()
             val ediAdapterClient = FakeEdiAdapterClient()
             val payloadSigningClient = FakePayloadSigningClient()
+            val metrics = FakeMetrics()
             val messageProcessor = MessageProcessor(
-                fakeMessageReceiver(),
+                fakeMessageReceiver(metrics),
                 messageStateService,
                 ediAdapterClient,
-                payloadSigningClient
+                payloadSigningClient,
+                metrics
             )
 
             val payload = "data".toByteArray()
@@ -58,11 +61,13 @@ class MessageProcessorSpec : StringSpec(
             val messageStateService = FakeTransactionalMessageStateService()
             val ediAdapterClient = FakeEdiAdapterClient()
             val payloadSigningClient = FakePayloadSigningClient()
+            val metrics = FakeMetrics()
             val messageProcessor = MessageProcessor(
-                fakeMessageReceiver(),
+                fakeMessageReceiver(metrics),
                 messageStateService,
                 ediAdapterClient,
-                payloadSigningClient
+                payloadSigningClient,
+                metrics
             )
 
             val payload = "data".toByteArray()
@@ -90,11 +95,13 @@ class MessageProcessorSpec : StringSpec(
             val messageStateService = FakeTransactionalMessageStateService()
             val ediAdapterClient = FakeEdiAdapterClient()
             val payloadSigningClient = FakePayloadSigningClient()
+            val metrics = FakeMetrics()
             val messageProcessor = MessageProcessor(
-                fakeMessageReceiver(),
+                fakeMessageReceiver(metrics),
                 messageStateService,
                 ediAdapterClient,
-                payloadSigningClient
+                payloadSigningClient,
+                metrics
             )
 
             val uuid = Uuid.random()

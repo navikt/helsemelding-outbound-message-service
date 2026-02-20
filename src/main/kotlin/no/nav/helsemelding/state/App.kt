@@ -17,6 +17,8 @@ import no.nav.helsemelding.state.evaluator.AppRecTransitionEvaluator
 import no.nav.helsemelding.state.evaluator.StateTransitionEvaluator
 import no.nav.helsemelding.state.evaluator.TransportStatusTranslator
 import no.nav.helsemelding.state.evaluator.TransportTransitionEvaluator
+import no.nav.helsemelding.state.metrics.CustomMetrics
+import no.nav.helsemelding.state.metrics.Metrics
 import no.nav.helsemelding.state.plugin.configureMetrics
 import no.nav.helsemelding.state.plugin.configureRoutes
 import no.nav.helsemelding.state.processor.MessageProcessor
@@ -38,6 +40,7 @@ fun main() = SuspendApp {
     result {
         resourceScope {
             val deps = dependencies()
+            val metrics = CustomMetrics(deps.meterRegistry)
 
             val scope = coroutineScope(coroutineContext)
 
@@ -49,10 +52,11 @@ fun main() = SuspendApp {
             )
 
             val messageProcessor = MessageProcessor(
-                messageReceiver = messageReceiver(deps.kafkaReceiver),
+                messageReceiver = messageReceiver(deps.kafkaReceiver, metrics),
                 messageStateService = messageStateService(deps.database),
                 ediAdapterClient = deps.ediAdapterClient,
-                payloadSigningClient = deps.payloadSigningClient
+                payloadSigningClient = deps.payloadSigningClient,
+                metrics = metrics
             )
 
             server(
@@ -115,5 +119,8 @@ private fun messageStateService(database: Database): MessageStateService {
     )
 }
 
-private fun messageReceiver(kafkaReceiver: KafkaReceiver<String, ByteArray>): MessageReceiver =
-    MessageReceiver(config().kafka.topics.dialogMessageOut, kafkaReceiver)
+private fun messageReceiver(
+    kafkaReceiver: KafkaReceiver<String, ByteArray>,
+    metrics: Metrics
+): MessageReceiver =
+    MessageReceiver(config().kafka.topics.dialogMessageOut, kafkaReceiver, metrics)

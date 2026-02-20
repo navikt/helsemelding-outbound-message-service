@@ -15,6 +15,7 @@ import no.nav.helsemelding.state.config.Config
 import no.nav.helsemelding.state.config.Kafka.SecurityProtocol
 import no.nav.helsemelding.state.config.withKafka
 import no.nav.helsemelding.state.kafkaReceiver
+import no.nav.helsemelding.state.metrics.FakeMetrics
 import org.apache.kafka.clients.producer.ProducerRecord
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
@@ -52,7 +53,8 @@ class MessageReceiverSpec : KafkaSpec(
 
                     val receiver = MessageReceiver(
                         topic,
-                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest)
+                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest),
+                        FakeMetrics()
                     )
                     val messages = receiver.receiveMessages()
 
@@ -82,7 +84,8 @@ class MessageReceiverSpec : KafkaSpec(
 
                     val receiver = MessageReceiver(
                         topic,
-                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest)
+                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest),
+                        FakeMetrics()
                     )
                     val messages = receiver.receiveMessages()
 
@@ -114,7 +117,8 @@ class MessageReceiverSpec : KafkaSpec(
 
                     val receiver = MessageReceiver(
                         topic,
-                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest)
+                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest),
+                        FakeMetrics()
                     )
                     val messages = receiver.receiveMessages()
 
