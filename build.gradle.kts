@@ -92,5 +92,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("no.nav.helsemelding.state.AppKt")
+    mainClass.set("no.nav.helsemelding.outbound.AppKt")
 }

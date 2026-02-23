@@ -146,4 +146,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "helsemelding-state-service"
+rootProject.name = "helsemelding-outbound-message-service"
