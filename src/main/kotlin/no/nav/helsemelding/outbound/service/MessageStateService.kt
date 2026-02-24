@@ -165,25 +165,19 @@ class FakeTransactionalMessageStateService() : MessageStateService {
             historyRepository
         )
 
-    private val transactionalMessageStateService =
-        TransactionalMessageStateService(
-            messageRepository,
-            historyRepository,
-            transactionRepository
-        )
-
     override suspend fun createInitialState(createState: CreateState): MessageStateSnapshot =
-        transactionalMessageStateService.createInitialState(createState)
+        transactionRepository.createInitialState(createState)
 
     override suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot =
-        transactionalMessageStateService.recordStateChange(updateState)
+        transactionRepository.recordStateChange(updateState)
 
-    override suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot? =
-        transactionalMessageStateService.getMessageSnapshot(messageId)
+    override suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot? {
+        val state = messageRepository.findOrNull(messageId) ?: return null
+        val history = historyRepository.findAll(messageId)
+        return MessageStateSnapshot(state, history)
+    }
 
-    override suspend fun findPollableMessages(): List<MessageState> =
-        transactionalMessageStateService.findPollableMessages()
+    override suspend fun findPollableMessages(): List<MessageState> = messageRepository.findForPolling()
 
-    override suspend fun markAsPolled(externalRefIds: List<Uuid>): Int =
-        transactionalMessageStateService.markAsPolled(externalRefIds)
+    override suspend fun markAsPolled(externalRefIds: List<Uuid>): Int = messageRepository.markPolled(externalRefIds)
 }
