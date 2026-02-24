@@ -106,8 +106,8 @@ private suspend fun scheduleStateDistributionMetricRefresh(
     return Schedule
         .spaced<Unit>(config().metrics.metricsUpdatingInterval)
         .repeat {
-            val counts = messageStateService.countByDeliveryState()
-            metrics.registerDeliveryStateDistribution(counts)
+            val counts = messageStateService.countByTransportState()
+            metrics.registerTransportStateDistribution(counts)
         }
 }
 

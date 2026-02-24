@@ -1,9 +1,10 @@
 package no.nav.helsemelding.outbound.service
 
+import no.nav.helsemelding.outbound.evaluator.TransportStatusTranslator
 import no.nav.helsemelding.outbound.model.CreateState
-import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
+import no.nav.helsemelding.outbound.model.TransportStatus
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.repository.FakeMessageRepository
 import no.nav.helsemelding.outbound.repository.FakeMessageStateHistoryRepository
@@ -134,19 +135,16 @@ interface MessageStateService {
      */
     suspend fun markAsPolled(externalRefIds: List<Uuid>): Int
 
-    /** *
-     * Returns a count of messages grouped by their current external delivery state.
+    /**
+     * Counts the number of messages in each transport state.
      *
-     * This function provides an overview of how many messages are in each delivery state,
-     * which can be useful for monitoring, diagnostics, and reporting.
+     * This function returns a map where the keys are the transport delivery states
+     * (as defined by [TransportStatus]) and the values are the counts of messages currently
+     * in each state.
      *
-     * The returned map includes all possible delivery states defined in [ExternalDeliveryState],
-     * even if the count for some states is zero. This ensures a complete picture of the
-     * distribution of messages across all states.
-     *
-     * @return a map where keys are delivery states and values are counts of messages in those states.
+     * @return a map of transport delivery states to their respective message counts.
      */
-    suspend fun countByDeliveryState(): Map<ExternalDeliveryState, Long>
+    suspend fun countByTransportState(): Map<TransportStatus, Long>
 }
 
 class TransactionalMessageStateService(
@@ -170,9 +168,13 @@ class TransactionalMessageStateService(
 
     override suspend fun markAsPolled(externalRefIds: List<Uuid>): Int = messageRepository.markPolled(externalRefIds)
 
-    override suspend fun countByDeliveryState(): Map<ExternalDeliveryState, Long> {
-        val messagesCountByState = messageRepository.countByDeliveryState()
-        return ExternalDeliveryState.entries.associateWith { messagesCountByState[it] ?: 0L }
+    override suspend fun countByTransportState(): Map<TransportStatus, Long> {
+        val messagesCountByExternalDeliveryState = messageRepository.countByExternalDeliveryState()
+        val messagesCountByTransportState = messagesCountByExternalDeliveryState.mapKeys {
+            TransportStatusTranslator().translate(it.key)
+        }
+
+        return TransportStatus.entries.associateWith { messagesCountByTransportState[it] ?: 0L }
     }
 }
 
@@ -207,6 +209,8 @@ class FakeTransactionalMessageStateService() : MessageStateService {
     override suspend fun markAsPolled(externalRefIds: List<Uuid>): Int =
         transactionalMessageStateService.markAsPolled(externalRefIds)
 
-    override suspend fun countByDeliveryState(): Map<ExternalDeliveryState, Long> =
-        messageRepository.countByDeliveryState()
+    override suspend fun countByTransportState(): Map<TransportStatus, Long> =
+        messageRepository.countByExternalDeliveryState().mapKeys {
+            TransportStatusTranslator().translate(it.key)
+        }
 }
