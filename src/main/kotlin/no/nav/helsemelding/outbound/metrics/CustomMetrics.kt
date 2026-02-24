@@ -5,7 +5,7 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
-import no.nav.helsemelding.state.model.ExternalDeliveryState
+import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
