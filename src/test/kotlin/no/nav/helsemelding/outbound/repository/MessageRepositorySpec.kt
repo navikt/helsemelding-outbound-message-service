@@ -371,6 +371,65 @@ class MessageRepositorySpec : StringSpec(
             }
         }
 
+        "countByExternalDeliveryState should return correct counts for each state including null" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val now = Clock.System.now()
+
+                    val externalRefId1 = Uuid.random()
+                    val externalRefId2 = Uuid.random()
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId1,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        Clock.System.now()
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId2,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
+                        URI.create(MESSAGE3).toURL(),
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId1,
+                        ACKNOWLEDGED,
+                        null,
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId2,
+                        ACKNOWLEDGED,
+                        null,
+                        now
+                    )
+
+                    val counts = messageRepository.countByExternalDeliveryState()
+
+                    counts.size shouldBe 2
+                    counts[ACKNOWLEDGED] shouldBe 2
+                    counts[null] shouldBe 1
+                }
+            }
+        }
+
         afterEach { container.stop() }
     }
 )

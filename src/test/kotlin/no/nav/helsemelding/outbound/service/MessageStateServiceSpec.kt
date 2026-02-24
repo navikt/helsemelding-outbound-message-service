@@ -11,7 +11,11 @@ import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.REJECTED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
+import no.nav.helsemelding.outbound.model.TransportStatus
 import no.nav.helsemelding.outbound.model.UpdateState
+import no.nav.helsemelding.outbound.repository.FakeMessageRepository
+import no.nav.helsemelding.outbound.repository.FakeMessageStateHistoryRepository
+import no.nav.helsemelding.outbound.repository.FakeMessageStateTransactionRepository
 import java.net.URI
 import kotlin.uuid.Uuid
 
@@ -23,6 +27,18 @@ private const val MESSAGE5 = "http://example.com/messages/5"
 
 class MessageStateServiceSpec : StringSpec(
     {
+
+        val messageRepository = FakeMessageRepository()
+        val historyRepository = FakeMessageStateHistoryRepository()
+        val transactionRepository = FakeMessageStateTransactionRepository(
+            messageRepository,
+            historyRepository
+        )
+        val messageStateService = TransactionalMessageStateService(
+            messageRepository,
+            historyRepository,
+            transactionRepository
+        )
 
         "Create initial state – creates message with null external states and one baseline history entry" {
             val messageStateService = FakeTransactionalMessageStateService()
@@ -257,6 +273,18 @@ class MessageStateServiceSpec : StringSpec(
 
             messageStateService.getMessageSnapshot(externalRefId1)!!.messageState.lastPolledAt shouldNotBe null
             messageStateService.getMessageSnapshot(externalRefId2)!!.messageState.lastPolledAt shouldBe null
+        }
+
+        "countByTransportState should return correct counts for each TransportStatus" {
+
+            // input data setup is in the FakeMessageRepository
+            val result = messageStateService.countByTransportState()
+
+            result[TransportStatus.NEW] shouldBe 0
+            result[TransportStatus.ACKNOWLEDGED] shouldBe 123
+            result[TransportStatus.PENDING] shouldBe 234
+            result[TransportStatus.REJECTED] shouldBe 0
+            result[TransportStatus.INVALID] shouldBe 0
         }
     }
 )
