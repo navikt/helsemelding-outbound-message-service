@@ -15,6 +15,7 @@ import no.nav.helsemelding.outbound.LifecycleError.ConflictingLifecycleId
 import no.nav.helsemelding.outbound.container
 import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.AppRecStatus
+import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.REJECTED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
@@ -22,6 +23,7 @@ import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.repository.Messages.externalRefId
 import no.nav.helsemelding.outbound.repository.Messages.lastPolledAt
 import no.nav.helsemelding.outbound.shouldBeInstant
+import no.nav.helsemelding.outbound.shouldBeRightOfType
 import no.nav.helsemelding.outbound.util.olderThanSeconds
 import no.nav.helsemelding.outbound.util.toSql
 import org.jetbrains.exposed.v1.core.eq
@@ -69,14 +71,15 @@ class MessageRepositorySpec : StringSpec(
                         lastStateChange = now
                     )
 
-                    val state = result.shouldBeRight()
-                    state.messageType shouldBe DIALOG
-                    state.externalRefId shouldBe externalRefId
-                    state.externalMessageUrl shouldBe externalMessageUrl
-                    state.lastStateChange shouldBeInstant now
+                    result.shouldBeRightOfType<CreateStateResult.Created> { created ->
+                        created.state.messageType shouldBe DIALOG
+                        created.state.externalRefId shouldBe externalRefId
+                        created.state.externalMessageUrl shouldBe externalMessageUrl
+                        created.state.lastStateChange shouldBeInstant now
 
-                    state.externalDeliveryState shouldBe null
-                    state.appRecStatus shouldBe null
+                        created.state.externalDeliveryState shouldBe null
+                        created.state.appRecStatus shouldBe null
+                    }
                 }
             }
         }
@@ -109,9 +112,19 @@ class MessageRepositorySpec : StringSpec(
                         lastStateChange = now
                     )
 
-                    val firstState = firstResult.shouldBeRight()
-                    val secondState = secondResult.shouldBeRight()
-                    secondState shouldBe firstState
+                    firstResult.shouldBeRightOfType<CreateStateResult.Created> { created ->
+                        created.state.messageType shouldBe DIALOG
+                        created.state.externalRefId shouldBe externalRefId
+                        created.state.externalMessageUrl shouldBe externalMessageUrl
+                        created.state.lastStateChange shouldBeInstant now
+                    }
+
+                    secondResult.shouldBeRightOfType<CreateStateResult.Existing> { existing ->
+                        existing.state.messageType shouldBe DIALOG
+                        existing.state.externalRefId shouldBe externalRefId
+                        existing.state.externalMessageUrl shouldBe externalMessageUrl
+                        existing.state.lastStateChange shouldBeInstant now
+                    }
                 }
             }
         }
@@ -351,9 +364,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE2).toURL(),
                         Clock.System.now()
                     )
-                        .shouldBeRight()
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = ACKNOWLEDGED
                             }
                         }
@@ -365,9 +377,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE3).toURL(),
                         Clock.System.now()
                     )
-                        .shouldBeRight()
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = UNCONFIRMED
                             }
                         }
@@ -379,9 +390,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE4).toURL(),
                         Clock.System.now()
                     )
-                        .shouldBeRight()
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = ACKNOWLEDGED
                                 row[appRecStatus] = AppRecStatus.OK
                             }
@@ -394,9 +404,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE5).toURL(),
                         Clock.System.now()
                     )
-                        .shouldBeRight()
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = REJECTED
                             }
                         }

@@ -7,6 +7,7 @@ import arrow.core.right
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.config
 import no.nav.helsemelding.outbound.model.AppRecStatus
+import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
@@ -75,7 +76,7 @@ interface MessageRepository {
         messageType: MessageType,
         externalMessageUrl: URL,
         lastStateChange: Instant
-    ): Either<LifecycleError, MessageState>
+    ): Either<LifecycleError, CreateStateResult>
 
     suspend fun updateState(
         externalRefId: Uuid,
@@ -100,7 +101,16 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         messageType: MessageType,
         externalMessageUrl: URL,
         lastStateChange: Instant
-    ): Either<LifecycleError, MessageState> = either {
+    ): Either<LifecycleError, CreateStateResult> = either {
+        findByIdOrNull(id)?.let { existing ->
+            return lifecycleId(
+                id,
+                externalRefId,
+                externalMessageUrl,
+                existing
+            )
+        }
+
         Messages.insertIgnore { insert ->
             insert[Messages.id] = id
             insert[Messages.externalRefId] = externalRefId
@@ -112,22 +122,13 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             insert[Messages.updatedAt] = CurrentTimestamp
         }
 
-        val result = when (val existingById = findByIdOrNull(id)) {
-            null -> uniquenessConflict(
-                incomingId = id,
-                incomingExternalRefId = externalRefId,
-                incomingUrl = externalMessageUrl
-            )
+        val created = findByIdOrNull(id) ?: return uniquenessConflict(
+            incomingId = id,
+            incomingExternalRefId = externalRefId,
+            incomingUrl = externalMessageUrl
+        )
 
-            else -> lifecycleId(
-                incomingId = id,
-                incomingExternalRefId = externalRefId,
-                incomingUrl = externalMessageUrl,
-                existing = existingById
-            )
-        }
-
-        result.bind()
+        CreateStateResult.Created(created)
     }
 
     override suspend fun updateState(
@@ -179,12 +180,12 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         incomingExternalRefId: Uuid,
         incomingUrl: URL,
         existing: MessageState
-    ): Either<LifecycleError, MessageState> {
+    ): Either<LifecycleError, CreateStateResult> {
         val sameExternalRef = existing.externalRefId == incomingExternalRefId
         val sameUrl = existing.externalMessageUrl == incomingUrl
 
         return when (sameExternalRef && sameUrl) {
-            true -> existing.right()
+            true -> CreateStateResult.Existing(existing).right()
             else -> LifecycleError.ConflictingLifecycleId(
                 messageId = incomingId,
                 existingExternalRefId = existing.externalRefId,
@@ -200,7 +201,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         incomingId: Uuid,
         incomingExternalRefId: Uuid,
         incomingUrl: URL
-    ): Either<LifecycleError, MessageState> {
+    ): Either<LifecycleError, CreateStateResult> {
         val existingByRef = findOrNull(incomingExternalRefId)
         if (existingByRef != null) {
             return LifecycleError.ConflictingExternalReferenceId(
@@ -266,7 +267,7 @@ class FakeMessageRepository : MessageRepository {
         messageType: MessageType,
         externalMessageUrl: URL,
         lastStateChange: Instant
-    ): Either<LifecycleError, MessageState> {
+    ): Either<LifecycleError, CreateStateResult> {
         val existingById = messagesById[id]
         if (existingById != null) {
             return idConflict(
@@ -314,7 +315,7 @@ class FakeMessageRepository : MessageRepository {
         messagesById[id] = newMessage
         byExternalRefId[externalRefId] = id
 
-        return newMessage.right()
+        return CreateStateResult.Created(newMessage).right()
     }
 
     override suspend fun updateState(
@@ -379,11 +380,11 @@ class FakeMessageRepository : MessageRepository {
         incomingExternalRefId: Uuid,
         incomingUrl: URL,
         existing: MessageState
-    ): Either<LifecycleError, MessageState> =
+    ): Either<LifecycleError, CreateStateResult> =
         if (existing.externalRefId == incomingExternalRefId &&
             existing.externalMessageUrl == incomingUrl
         ) {
-            existing.right()
+            CreateStateResult.Existing(existing).right()
         } else {
             LifecycleError.ConflictingLifecycleId(
                 messageId = incomingId,

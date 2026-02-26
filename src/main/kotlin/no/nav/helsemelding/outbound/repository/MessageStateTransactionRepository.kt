@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.raise.either
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.model.CreateState
+import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.UpdateState
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -25,7 +26,7 @@ class ExposedMessageStateTransactionRepository(
         createState: CreateState
     ): Either<LifecycleError, MessageStateSnapshot> = suspendTransaction(database) {
         either {
-            val messageState = messageRepository.createState(
+            val result = messageRepository.createState(
                 id = createState.id,
                 externalRefId = createState.externalRefId,
                 messageType = createState.messageType,
@@ -34,16 +35,21 @@ class ExposedMessageStateTransactionRepository(
             )
                 .bind()
 
-            val historyEntries = historyRepository.append(
-                messageId = createState.externalRefId,
-                oldDeliveryState = null,
-                newDeliveryState = null,
-                oldAppRecStatus = null,
-                newAppRecStatus = null,
-                changedAt = createState.occurredAt
-            )
+            when (result) {
+                is CreateStateResult.Created -> {
+                    val historyEntries = historyRepository.append(
+                        messageId = createState.externalRefId,
+                        oldDeliveryState = null,
+                        newDeliveryState = null,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = createState.occurredAt
+                    )
+                    MessageStateSnapshot(result.state, historyEntries)
+                }
 
-            MessageStateSnapshot(messageState, historyEntries)
+                is CreateStateResult.Existing -> MessageStateSnapshot(result.state, emptyList())
+            }
         }
     }
 
@@ -78,7 +84,7 @@ class FakeMessageStateTransactionRepository(
     override suspend fun createInitialState(
         createState: CreateState
     ): Either<LifecycleError, MessageStateSnapshot> = either {
-        val messageState = messageRepository.createState(
+        val result = messageRepository.createState(
             id = createState.id,
             externalRefId = createState.externalRefId,
             messageType = createState.messageType,
@@ -87,16 +93,21 @@ class FakeMessageStateTransactionRepository(
         )
             .bind()
 
-        val historyEntries = historyRepository.append(
-            messageId = createState.externalRefId,
-            oldDeliveryState = null,
-            newDeliveryState = null,
-            oldAppRecStatus = null,
-            newAppRecStatus = null,
-            changedAt = createState.occurredAt
-        )
+        when (result) {
+            is CreateStateResult.Created -> {
+                val historyEntries = historyRepository.append(
+                    messageId = createState.externalRefId,
+                    oldDeliveryState = null,
+                    newDeliveryState = null,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null,
+                    changedAt = createState.occurredAt
+                )
+                MessageStateSnapshot(result.state, historyEntries)
+            }
 
-        MessageStateSnapshot(messageState, historyEntries)
+            is CreateStateResult.Existing -> MessageStateSnapshot(result.state, emptyList())
+        }
     }
 
     override suspend fun recordStateChange(
