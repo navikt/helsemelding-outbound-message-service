@@ -4,6 +4,7 @@ import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
+import java.net.URL
 import kotlin.uuid.Uuid
 
 sealed interface Error
@@ -45,6 +46,33 @@ sealed interface PublishError : StateError {
     ) : PublishError
 }
 
+sealed interface LifecycleError : StateError {
+    data class ConflictingLifecycleId(
+        val messageId: Uuid,
+        val existingExternalRefId: Uuid?,
+        val existingExternalUrl: URL?,
+        val newExternalRefId: Uuid?,
+        val newExternalUrl: URL?
+    ) : LifecycleError
+
+    data class ConflictingExternalReferenceId(
+        val externalRefId: Uuid,
+        val existingMessageId: Uuid,
+        val newMessageId: Uuid
+    ) : LifecycleError
+
+    data class ConflictingExternalMessageUrl(
+        val externalUrl: URL,
+        val existingMessageId: Uuid,
+        val newMessageId: Uuid
+    ) : LifecycleError
+
+    data class PersistenceFailure(
+        val messageId: Uuid,
+        val reason: String
+    ) : LifecycleError
+}
+
 fun StateError.withMessageContext(message: MessageState): String =
     "Message ${message.externalRefId}: ${formatForLog()}"
 
@@ -66,4 +94,30 @@ private fun StateError.formatForLog(): String = when (this) {
 
     is PublishError.Failure ->
         "PublishFailure(messageId=$messageId, topic=$topic, cause=$cause)"
+
+    is LifecycleError.ConflictingLifecycleId ->
+        "ConflictingLifecycleId(" +
+            "messageId=$messageId, " +
+            "existingExternalRefId=$existingExternalRefId, " +
+            "existingExternalUrl=$existingExternalUrl, " +
+            "newExternalRefId=$newExternalRefId, " +
+            "newExternalUrl=$newExternalUrl" +
+            ")"
+
+    is LifecycleError.ConflictingExternalReferenceId ->
+        "ConflictingExternalReferenceId(" +
+            "externalRefId=$externalRefId, " +
+            "existingMessageId=$existingMessageId, " +
+            "newMessageId=$newMessageId" +
+            ")"
+
+    is LifecycleError.ConflictingExternalMessageUrl ->
+        "ConflictingExternalMessageUrl(" +
+            "externalUrl=$externalUrl, " +
+            "existingMessageId=$existingMessageId, " +
+            "newMessageId=$newMessageId" +
+            ")"
+
+    is LifecycleError.PersistenceFailure ->
+        "LifecyclePersistenceFailure(messageId=$messageId, reason=$reason)"
 }

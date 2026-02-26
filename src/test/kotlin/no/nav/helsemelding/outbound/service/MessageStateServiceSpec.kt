@@ -1,5 +1,6 @@
 package no.nav.helsemelding.outbound.service
 
+import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.nulls.shouldBeNull
@@ -39,6 +40,7 @@ class MessageStateServiceSpec : StringSpec(
                     externalMessageUrl = externalMessageUrl
                 )
             )
+                .shouldBeRight()
 
             val messageState = snapshot.messageState
 
@@ -133,6 +135,7 @@ class MessageStateServiceSpec : StringSpec(
                     externalMessageUrl = externalMessageUrl1
                 )
             )
+                .shouldBeRight()
 
             messageStateService.createInitialState(
                 CreateState(
