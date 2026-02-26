@@ -2,6 +2,8 @@ package no.nav.helsemelding.outbound.repository
 
 import no.nav.helsemelding.outbound.config
 import no.nav.helsemelding.outbound.model.AppRecStatus
+import no.nav.helsemelding.outbound.model.AppRecStatus.OK
+import no.nav.helsemelding.outbound.model.AppRecStatus.REJECTED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
@@ -90,6 +92,8 @@ interface MessageRepository {
     suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long>
 
     suspend fun countByAppRecState(): Map<AppRecStatus?, Long>
+
+    suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>
 }
 
 class ExposedMessageRepository(private val database: Database) : MessageRepository {
@@ -180,6 +184,18 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
                 state to count
             }
     }
+
+    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> =
+        suspendTransaction(database) {
+            Messages
+                .select(externalDeliveryState, appRecStatus, Messages.id.count())
+                .groupBy(externalDeliveryState, appRecStatus)
+                .associate { row ->
+                    val deliveryState = row[externalDeliveryState]
+                    val appRecState = row[appRecStatus]
+                    Pair(deliveryState, appRecState) to row[Messages.id.count()]
+                }
+        }
 
     private fun ResultRow.toMessageState() = MessageState(
         this[Messages.id],
@@ -279,7 +295,13 @@ class FakeMessageRepository : MessageRepository {
 
     override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> =
         mapOf(
-            AppRecStatus.OK to 123,
-            AppRecStatus.REJECTED to 234
+            OK to 123,
+            REJECTED to 234
+        )
+
+    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> =
+        mapOf(
+            Pair(ACKNOWLEDGED, OK) to 123,
+            Pair(ACKNOWLEDGED, REJECTED) to 234
         )
 }

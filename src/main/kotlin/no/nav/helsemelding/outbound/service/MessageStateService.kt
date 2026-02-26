@@ -2,11 +2,18 @@ package no.nav.helsemelding.outbound.service
 
 import no.nav.helsemelding.outbound.evaluator.TransportStatusTranslator
 import no.nav.helsemelding.outbound.model.AppRecStatus
+import no.nav.helsemelding.outbound.model.AppRecStatus.OK
+import no.nav.helsemelding.outbound.model.AppRecStatus.REJECTED
 import no.nav.helsemelding.outbound.model.CreateState
+import no.nav.helsemelding.outbound.model.DeliveryEvaluationState
+import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
+import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.TransportStatus
 import no.nav.helsemelding.outbound.model.UpdateState
+import no.nav.helsemelding.outbound.model.resolveDelivery
+import no.nav.helsemelding.outbound.model.toDeliveryState
 import no.nav.helsemelding.outbound.repository.FakeMessageRepository
 import no.nav.helsemelding.outbound.repository.FakeMessageStateHistoryRepository
 import no.nav.helsemelding.outbound.repository.FakeMessageStateTransactionRepository
@@ -157,6 +164,18 @@ interface MessageStateService {
      * @return a map of transport delivery states to their respective message counts.
      */
     suspend fun countByAppRecState(): Map<AppRecStatus?, Long>
+
+    /**
+     * Counts the number of messages in each delivery state.
+     *
+     * This function returns a map where the keys are the resolved message delivery states
+     * (as defined by [MessageDeliveryState]) and the values are the counts of messages currently
+     * in each state. The delivery state is derived from the combination of transport delivery state
+     * and application receipt status.
+     *
+     * @return a map of resolved message delivery states to their respective message counts.
+     */
+    suspend fun countMessageDeliveryState(): Map<MessageDeliveryState, Long>
 }
 
 class TransactionalMessageStateService(
@@ -191,6 +210,18 @@ class TransactionalMessageStateService(
     override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> {
         return messageRepository.countByAppRecState()
     }
+
+    override suspend fun countMessageDeliveryState(): Map<MessageDeliveryState, Long> {
+        val counts = messageRepository.countByExternalDeliveryStateAndAppRecStatus()
+        return counts.mapKeys {
+            val transportStatus = TransportStatusTranslator().translate(it.key.first)
+            val appRecStatus = it.key.second
+
+            DeliveryEvaluationState(transportStatus, appRecStatus)
+                .resolveDelivery()
+                .toDeliveryState()
+        }
+    }
 }
 
 class FakeTransactionalMessageStateService : MessageStateService {
@@ -219,10 +250,20 @@ class FakeTransactionalMessageStateService : MessageStateService {
     override suspend fun markAsPolled(externalRefIds: List<Uuid>): Int = messageRepository.markPolled(externalRefIds)
 
     override suspend fun countByTransportState(): Map<TransportStatus, Long> =
-        messageRepository.countByExternalDeliveryState().mapKeys {
-            TransportStatusTranslator().translate(it.key)
-        }
+        mapOf(
+            TransportStatus.ACKNOWLEDGED to 123,
+            TransportStatus.REJECTED to 234
+        )
 
     override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> =
-        messageRepository.countByAppRecState()
+        mapOf(
+            OK to 123,
+            REJECTED to 234
+        )
+
+    override suspend fun countMessageDeliveryState(): Map<MessageDeliveryState, Long> =
+        mapOf(
+            MessageDeliveryState.COMPLETED to 123,
+            MessageDeliveryState.REJECTED to 234
+        )
 }

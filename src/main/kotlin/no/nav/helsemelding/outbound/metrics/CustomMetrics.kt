@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import no.nav.helsemelding.outbound.model.AppRecStatus
+import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.TransportStatus
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -20,6 +21,7 @@ interface Metrics {
     fun registerOutgoingMessageProcessingDuration(durationNanos: Long)
     fun registerTransportStateDistribution(counts: Map<TransportStatus, Long>)
     fun registerAppRecStateDistribution(counts: Map<AppRecStatus?, Long>)
+    fun registerMessageDeliveryStateDistribution(counts: Map<MessageDeliveryState, Long>)
 }
 
 class CustomMetrics(val registry: MeterRegistry) : Metrics {
@@ -27,6 +29,9 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
         TransportStatus.entries.associateWith { AtomicLong(0) }
 
     private val appRecStateValues: Map<AppRecStatus?, AtomicLong> = prepareAppRecStateValues()
+
+    private val deliveryStateValues: Map<MessageDeliveryState, AtomicLong> =
+        MessageDeliveryState.entries.associateWith { AtomicLong(0) }
 
     init {
         transportStateValues.forEach { (state, atomic) ->
@@ -41,6 +46,13 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
             Gauge.builder("helsemelding_app_rec_state_distribution") { atomic.get().toDouble() }
                 .description("Current number of messages in each application recept state")
                 .tag("state", stateTag)
+                .register(registry)
+        }
+
+        deliveryStateValues.forEach { (state, atomic) ->
+            Gauge.builder("helsemelding_message_deliver_state_distribution") { atomic.get().toDouble() }
+                .description("Current number of messages in each message delivery state")
+                .tag("state", state.name)
                 .register(registry)
         }
     }
@@ -86,8 +98,8 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
 
     override fun registerTransportStateDistribution(counts: Map<TransportStatus, Long>) {
         log.debug { "Registering delivery state distribution" }
-        TransportStatus.entries.forEach { state ->
-            transportStateValues.getValue(state).set(counts[state] ?: 0L)
+        transportStateValues.forEach { transportState ->
+            transportState.value.set(counts[transportState.key] ?: 0L)
         }
     }
 
@@ -95,6 +107,13 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
         log.debug { "Registering application recept state distribution" }
         appRecStateValues.forEach { appRecState ->
             appRecState.value.set(counts[appRecState.key] ?: 0L)
+        }
+    }
+
+    override fun registerMessageDeliveryStateDistribution(counts: Map<MessageDeliveryState, Long>) {
+        log.debug { "Registering message delivery state distribution" }
+        deliveryStateValues.forEach { deliveryState ->
+            deliveryState.value.set(counts[deliveryState.key] ?: 0L)
         }
     }
 
@@ -134,13 +153,19 @@ class FakeMetrics() : Metrics {
 
     override fun registerTransportStateDistribution(counts: Map<TransportStatus, Long>) {
         counts.forEach { (state, count) ->
-            log.info { "helsemelding_state_distribution metric is updated for state: ${state.name} with count: $count" }
+            log.info { "helsemelding_transport_state_distribution metric is updated for state: ${state.name} with count: $count" }
         }
     }
 
     override fun registerAppRecStateDistribution(counts: Map<AppRecStatus?, Long>) {
         counts.forEach { (state, count) ->
-            log.info { "helsemelding_state_distribution metric is updated for state: ${state?.name} with count: $count" }
+            log.info { "helsemelding_app_rec_state_distribution metric is updated for state: ${state?.name} with count: $count" }
+        }
+    }
+
+    override fun registerMessageDeliveryStateDistribution(counts: Map<MessageDeliveryState, Long>) {
+        counts.forEach { (state, count) ->
+            log.info { "helsemelding_message_deliver_state_distribution metric is updated for state: ${state.name} with count: $count" }
         }
     }
 }

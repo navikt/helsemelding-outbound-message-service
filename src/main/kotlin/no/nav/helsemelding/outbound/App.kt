@@ -115,6 +115,9 @@ private suspend fun refreshMetrics(messageStateService: MessageStateService, met
 
     val appRecStateCounts = messageStateService.countByAppRecState()
     metrics.registerAppRecStateDistribution(appRecStateCounts)
+
+    val deliveryStateCounts = messageStateService.countMessageDeliveryState()
+    metrics.registerMessageDeliveryStateDistribution(deliveryStateCounts)
 }
 
 private fun logError(t: Throwable) = log.error { "Shutdown state-service due to: ${t.stackTraceToString()}" }
