@@ -44,7 +44,7 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
         appRecStateValues.forEach { (state, atomic) ->
             val stateTag = state?.name ?: "null"
             Gauge.builder("helsemelding_app_rec_state_distribution") { atomic.get().toDouble() }
-                .description("Current number of messages in each application recept state")
+                .description("Current number of messages in each application receipt state")
                 .tag("state", stateTag)
                 .register(registry)
         }
@@ -104,7 +104,7 @@ class CustomMetrics(val registry: MeterRegistry) : Metrics {
     }
 
     override fun registerAppRecStateDistribution(counts: Map<AppRecStatus?, Long>) {
-        log.debug { "Registering application recept state distribution" }
+        log.debug { "Registering application receipt state distribution" }
         appRecStateValues.forEach { appRecState ->
             appRecState.value.set(counts[appRecState.key] ?: 0L)
         }

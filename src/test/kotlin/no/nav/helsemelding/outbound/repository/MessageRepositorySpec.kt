@@ -389,7 +389,7 @@ class MessageRepositorySpec : StringSpec(
                         externalRefId1,
                         DIALOG,
                         URI.create(MESSAGE1).toURL(),
-                        Clock.System.now()
+                        now
                     )
 
                     messageRepository.createState(
@@ -448,7 +448,7 @@ class MessageRepositorySpec : StringSpec(
                         externalRefId1,
                         DIALOG,
                         URI.create(MESSAGE1).toURL(),
-                        Clock.System.now()
+                        now
                     )
 
                     messageRepository.createState(
@@ -507,7 +507,7 @@ class MessageRepositorySpec : StringSpec(
                         externalRefId1,
                         DIALOG,
                         URI.create(MESSAGE1).toURL(),
-                        Clock.System.now()
+                        now
                     )
 
                     messageRepository.createState(
