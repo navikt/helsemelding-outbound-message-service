@@ -181,10 +181,10 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         incomingUrl: URL,
         existing: MessageState
     ): Either<LifecycleError, CreateStateResult> {
-        val sameExternalRef = existing.externalRefId == incomingExternalRefId
-        val sameUrl = existing.externalMessageUrl == incomingUrl
+        val isSameExternalRef = existing.externalRefId == incomingExternalRefId
+        val isSameUrl = existing.externalMessageUrl == incomingUrl
 
-        return when (sameExternalRef && sameUrl) {
+        return when (isSameExternalRef && isSameUrl) {
             true -> CreateStateResult.Existing(existing).right()
             else -> LifecycleError.ConflictingLifecycleId(
                 messageId = incomingId,
