@@ -30,9 +30,9 @@ import no.nav.helsemelding.outbound.repository.ExposedMessageStateTransactionRep
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.MetricsService
 import no.nav.helsemelding.outbound.service.PollerService
+import no.nav.helsemelding.outbound.service.PrometheusMetricsService
 import no.nav.helsemelding.outbound.service.StateEvaluatorService
 import no.nav.helsemelding.outbound.service.TransactionalMessageStateService
-import no.nav.helsemelding.outbound.service.TransactionalMetricsService
 import no.nav.helsemelding.outbound.util.coroutineScope
 import org.jetbrains.exposed.v1.jdbc.Database
 
@@ -152,7 +152,7 @@ private fun messageStateService(database: Database): MessageStateService {
 
 private fun metricsService(database: Database): MetricsService {
     val messageRepository = ExposedMessageRepository(database)
-    return TransactionalMetricsService(messageRepository)
+    return PrometheusMetricsService(messageRepository)
 }
 
 private fun messageReceiver(

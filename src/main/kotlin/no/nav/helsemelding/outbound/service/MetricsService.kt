@@ -47,7 +47,7 @@ interface MetricsService {
     suspend fun countByMessageDeliveryState(): Map<MessageDeliveryState, Long>
 }
 
-class TransactionalMetricsService(
+class PrometheusMetricsService(
     private val messageRepository: MessageRepository
 ) : MetricsService {
     override suspend fun countByTransportState(): Map<TransportStatus, Long> {

@@ -7,8 +7,6 @@ import arrow.core.right
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.config
 import no.nav.helsemelding.outbound.model.AppRecStatus
-import no.nav.helsemelding.outbound.model.AppRecStatus.OK
-import no.nav.helsemelding.outbound.model.AppRecStatus.REJECTED
 import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
@@ -304,6 +302,9 @@ class FakeMessageRepository : MessageRepository {
     private val poller = config().poller
     private val messagesById = mutableMapOf<Uuid, MessageState>()
     private val byExternalRefId = mutableMapOf<Uuid, Uuid>()
+    private var countByExternalDeliveryState = mutableMapOf<ExternalDeliveryState?, Long>()
+    private var countByAppRecStatus = mutableMapOf<AppRecStatus?, Long>()
+    private var countByExternalDeliveryStateAndAppRecStatus = mutableMapOf<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>()
 
     override suspend fun createState(
         id: Uuid,
@@ -419,23 +420,23 @@ class FakeMessageRepository : MessageRepository {
         return count
     }
 
-    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> =
-        mapOf(
-            ACKNOWLEDGED to 123,
-            UNCONFIRMED to 234
-        )
+    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = countByExternalDeliveryState
 
-    override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> =
-        mapOf(
-            OK to 123,
-            REJECTED to 234
-        )
+    override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> = countByAppRecStatus
 
-    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> =
-        mapOf(
-            Pair(ACKNOWLEDGED, OK) to 123,
-            Pair(ACKNOWLEDGED, REJECTED) to 234
-        )
+    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> = countByExternalDeliveryStateAndAppRecStatus
+
+    fun setCountByExternalDeliveryState(values: Map<ExternalDeliveryState?, Long>) {
+        countByExternalDeliveryState = values.toMutableMap()
+    }
+
+    fun setCountByAppRecState(values: Map<AppRecStatus?, Long>) {
+        countByAppRecStatus = values.toMutableMap()
+    }
+
+    fun setCountByExternalDeliveryStateAndAppRecStatus(values: Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>) {
+        countByExternalDeliveryStateAndAppRecStatus = values.toMutableMap()
+    }
 
     private fun idConflict(
         incomingId: Uuid,
