@@ -1,6 +1,7 @@
 package no.nav.helsemelding.outbound.repository
 
 import arrow.fx.coroutines.resourceScope
+import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import no.nav.helsemelding.outbound.container
@@ -51,6 +52,7 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                         occurredAt = now
                     )
                 )
+                    .shouldBeRight()
 
                 val messageState = messageStateSnapshot.messageState
 
