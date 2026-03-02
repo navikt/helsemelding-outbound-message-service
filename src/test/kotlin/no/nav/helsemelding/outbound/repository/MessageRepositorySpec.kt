@@ -1,14 +1,21 @@
 package no.nav.helsemelding.outbound.repository
 
 import arrow.fx.coroutines.resourceScope
+import io.kotest.assertions.arrow.core.shouldBeLeft
+import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import no.nav.helsemelding.outbound.LifecycleError.ConflictingExternalMessageUrl
+import no.nav.helsemelding.outbound.LifecycleError.ConflictingExternalReferenceId
+import no.nav.helsemelding.outbound.LifecycleError.ConflictingLifecycleId
 import no.nav.helsemelding.outbound.container
 import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.AppRecStatus
+import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.REJECTED
@@ -17,6 +24,7 @@ import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.repository.Messages.externalRefId
 import no.nav.helsemelding.outbound.repository.Messages.lastPolledAt
 import no.nav.helsemelding.outbound.shouldBeInstant
+import no.nav.helsemelding.outbound.shouldBeRightOfType
 import no.nav.helsemelding.outbound.util.olderThanSeconds
 import no.nav.helsemelding.outbound.util.toSql
 import org.jetbrains.exposed.v1.core.eq
@@ -56,7 +64,7 @@ class MessageRepositorySpec : StringSpec(
                     val externalMessageUrl = URI.create(MESSAGE1).toURL()
                     val now = Clock.System.now()
 
-                    val state = messageRepository.createState(
+                    val result = messageRepository.createState(
                         id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
@@ -64,13 +72,182 @@ class MessageRepositorySpec : StringSpec(
                         lastStateChange = now
                     )
 
-                    state.messageType shouldBe DIALOG
-                    state.externalRefId shouldBe externalRefId
-                    state.externalMessageUrl shouldBe externalMessageUrl
-                    state.lastStateChange shouldBeInstant now
+                    result.shouldBeRightOfType<CreateStateResult.Created> { created ->
+                        created.state.messageType shouldBe DIALOG
+                        created.state.externalRefId shouldBe externalRefId
+                        created.state.externalMessageUrl shouldBe externalMessageUrl
+                        created.state.lastStateChange shouldBeInstant now
 
-                    state.externalDeliveryState shouldBe null
-                    state.appRecStatus shouldBe null
+                        created.state.externalDeliveryState shouldBe null
+                        created.state.appRecStatus shouldBe null
+                    }
+                }
+            }
+        }
+
+        "Create state - idempotent duplicate returns existing state" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val id = Uuid.random()
+                    val externalRefId = Uuid.random()
+                    val externalMessageUrl = URI.create(MESSAGE1).toURL()
+                    val now = Clock.System.now()
+
+                    val firstResult = messageRepository.createState(
+                        id = id,
+                        externalRefId = externalRefId,
+                        messageType = DIALOG,
+                        externalMessageUrl = externalMessageUrl,
+                        lastStateChange = now
+                    )
+
+                    val secondResult = messageRepository.createState(
+                        id = id,
+                        externalRefId = externalRefId,
+                        messageType = DIALOG,
+                        externalMessageUrl = externalMessageUrl,
+                        lastStateChange = now
+                    )
+
+                    firstResult.shouldBeRightOfType<CreateStateResult.Created> { created ->
+                        created.state.messageType shouldBe DIALOG
+                        created.state.externalRefId shouldBe externalRefId
+                        created.state.externalMessageUrl shouldBe externalMessageUrl
+                        created.state.lastStateChange shouldBeInstant now
+                    }
+
+                    secondResult.shouldBeRightOfType<CreateStateResult.Existing> { existing ->
+                        existing.state.messageType shouldBe DIALOG
+                        existing.state.externalRefId shouldBe externalRefId
+                        existing.state.externalMessageUrl shouldBe externalMessageUrl
+                        existing.state.lastStateChange shouldBeInstant now
+                    }
+                }
+            }
+        }
+
+        "Create state - conflicting lifecycle id" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val id = Uuid.random()
+                    val externalRefId1 = Uuid.random()
+                    val externalRefId2 = Uuid.random()
+                    val url1 = URI.create(MESSAGE1).toURL()
+                    val url2 = URI.create(MESSAGE2).toURL()
+                    val now = Clock.System.now()
+
+                    messageRepository.createState(
+                        id = id,
+                        externalRefId = externalRefId1,
+                        messageType = DIALOG,
+                        externalMessageUrl = url1,
+                        lastStateChange = now
+                    )
+                        .shouldBeRight()
+
+                    val conflict = messageRepository.createState(
+                        id = id,
+                        externalRefId = externalRefId2,
+                        messageType = DIALOG,
+                        externalMessageUrl = url2,
+                        lastStateChange = now
+                    )
+
+                    val error = conflict.shouldBeLeft()
+                    val lifecycleError = error.shouldBeInstanceOf<ConflictingLifecycleId>()
+                    lifecycleError.messageId shouldBe id
+                    lifecycleError.existingExternalRefId shouldBe externalRefId1
+                    lifecycleError.existingExternalUrl shouldBe url1
+                    lifecycleError.newExternalRefId shouldBe externalRefId2
+                    lifecycleError.newExternalUrl shouldBe url2
+                }
+            }
+        }
+
+        "Create state - conflicting external reference id" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val id1 = Uuid.random()
+                    val id2 = Uuid.random()
+                    val externalRefId = Uuid.random()
+                    val url1 = URI.create(MESSAGE1).toURL()
+                    val url2 = URI.create(MESSAGE2).toURL()
+                    val now = Clock.System.now()
+
+                    messageRepository.createState(
+                        id = id1,
+                        externalRefId = externalRefId,
+                        messageType = DIALOG,
+                        externalMessageUrl = url1,
+                        lastStateChange = now
+                    )
+                        .shouldBeRight()
+
+                    val conflict = messageRepository.createState(
+                        id = id2,
+                        externalRefId = externalRefId,
+                        messageType = DIALOG,
+                        externalMessageUrl = url2,
+                        lastStateChange = now
+                    )
+
+                    val error = conflict.shouldBeLeft()
+                    val lifecycleError = error.shouldBeInstanceOf<ConflictingExternalReferenceId>()
+                    lifecycleError.externalRefId shouldBe externalRefId
+                    lifecycleError.existingMessageId shouldBe id1
+                    lifecycleError.newMessageId shouldBe id2
+                }
+            }
+        }
+
+        "Create state - conflicting message URL" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val id1 = Uuid.random()
+                    val id2 = Uuid.random()
+                    val externalRefId1 = Uuid.random()
+                    val externalRefId2 = Uuid.random()
+                    val url = URI.create(MESSAGE1).toURL()
+                    val now = Clock.System.now()
+
+                    messageRepository.createState(
+                        id = id1,
+                        externalRefId = externalRefId1,
+                        messageType = DIALOG,
+                        externalMessageUrl = url,
+                        lastStateChange = now
+                    )
+                        .shouldBeRight()
+
+                    val conflict = messageRepository.createState(
+                        id = id2,
+                        externalRefId = externalRefId2,
+                        messageType = DIALOG,
+                        externalMessageUrl = url,
+                        lastStateChange = now
+                    )
+
+                    val error = conflict.shouldBeLeft()
+                    val lifecycleError = error.shouldBeInstanceOf<ConflictingExternalMessageUrl>()
+                    lifecycleError.externalUrl shouldBe url
+                    lifecycleError.existingMessageId shouldBe id1
+                    lifecycleError.newMessageId shouldBe id2
                 }
             }
         }
@@ -188,8 +365,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE2).toURL(),
                         Clock.System.now()
                     )
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = ACKNOWLEDGED
                             }
                         }
@@ -201,8 +378,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE3).toURL(),
                         Clock.System.now()
                     )
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = UNCONFIRMED
                             }
                         }
@@ -214,8 +391,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE4).toURL(),
                         Clock.System.now()
                     )
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = ACKNOWLEDGED
                                 row[appRecStatus] = AppRecStatus.OK
                             }
@@ -228,8 +405,8 @@ class MessageRepositorySpec : StringSpec(
                         URI.create(MESSAGE5).toURL(),
                         Clock.System.now()
                     )
-                        .also {
-                            Messages.update({ externalRefId eq it.externalRefId }) { row ->
+                        .shouldBeRightOfType<CreateStateResult.Created> {
+                            Messages.update({ externalRefId eq it.state.externalRefId }) { row ->
                                 row[externalDeliveryState] = REJECTED
                             }
                         }

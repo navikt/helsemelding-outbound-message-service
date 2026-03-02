@@ -1,13 +1,17 @@
 package no.nav.helsemelding.outbound.repository
 
+import arrow.core.Either
+import arrow.core.raise.either
+import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.model.CreateState
+import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.UpdateState
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 
 interface MessageStateTransactionRepository {
-    suspend fun createInitialState(createState: CreateState): MessageStateSnapshot
+    suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot>
 
     suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot
 }
@@ -20,25 +24,33 @@ class ExposedMessageStateTransactionRepository(
 
     override suspend fun createInitialState(
         createState: CreateState
-    ): MessageStateSnapshot = suspendTransaction(database) {
-        val messageState = messageRepository.createState(
-            id = createState.id,
-            externalRefId = createState.externalRefId,
-            messageType = createState.messageType,
-            externalMessageUrl = createState.externalMessageUrl,
-            lastStateChange = createState.occurredAt
-        )
+    ): Either<LifecycleError, MessageStateSnapshot> = suspendTransaction(database) {
+        either {
+            val result = messageRepository.createState(
+                id = createState.id,
+                externalRefId = createState.externalRefId,
+                messageType = createState.messageType,
+                externalMessageUrl = createState.externalMessageUrl,
+                lastStateChange = createState.occurredAt
+            )
+                .bind()
 
-        val historyEntries = historyRepository.append(
-            messageId = createState.externalRefId,
-            oldDeliveryState = null,
-            newDeliveryState = null,
-            oldAppRecStatus = null,
-            newAppRecStatus = null,
-            changedAt = createState.occurredAt
-        )
+            when (result) {
+                is CreateStateResult.Created -> {
+                    val historyEntries = historyRepository.append(
+                        messageId = createState.externalRefId,
+                        oldDeliveryState = null,
+                        newDeliveryState = null,
+                        oldAppRecStatus = null,
+                        newAppRecStatus = null,
+                        changedAt = createState.occurredAt
+                    )
+                    MessageStateSnapshot(result.state, historyEntries)
+                }
 
-        MessageStateSnapshot(messageState, historyEntries)
+                is CreateStateResult.Existing -> MessageStateSnapshot(result.state, emptyList())
+            }
+        }
     }
 
     override suspend fun recordStateChange(
@@ -71,25 +83,31 @@ class FakeMessageStateTransactionRepository(
 
     override suspend fun createInitialState(
         createState: CreateState
-    ): MessageStateSnapshot {
-        val messageState = messageRepository.createState(
+    ): Either<LifecycleError, MessageStateSnapshot> = either {
+        val result = messageRepository.createState(
             id = createState.id,
             externalRefId = createState.externalRefId,
             messageType = createState.messageType,
             externalMessageUrl = createState.externalMessageUrl,
             lastStateChange = createState.occurredAt
         )
+            .bind()
 
-        val historyEntries = historyRepository.append(
-            messageId = createState.externalRefId,
-            oldDeliveryState = null,
-            newDeliveryState = null,
-            oldAppRecStatus = null,
-            newAppRecStatus = null,
-            changedAt = createState.occurredAt
-        )
+        when (result) {
+            is CreateStateResult.Created -> {
+                val historyEntries = historyRepository.append(
+                    messageId = createState.externalRefId,
+                    oldDeliveryState = null,
+                    newDeliveryState = null,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null,
+                    changedAt = createState.occurredAt
+                )
+                MessageStateSnapshot(result.state, historyEntries)
+            }
 
-        return MessageStateSnapshot(messageState, historyEntries)
+            is CreateStateResult.Existing -> MessageStateSnapshot(result.state, emptyList())
+        }
     }
 
     override suspend fun recordStateChange(

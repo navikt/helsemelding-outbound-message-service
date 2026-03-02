@@ -1,5 +1,6 @@
 package no.nav.helsemelding.outbound.poller
 
+import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
@@ -94,6 +95,7 @@ class PollerServiceSpec : StringSpec(
                     externalUrl
                 )
             )
+                .shouldBeRight()
 
             ediAdapterClient.givenStatusList(externalRefId, emptyList())
 
@@ -120,6 +122,8 @@ class PollerServiceSpec : StringSpec(
                     externalUrl
                 )
             )
+                .shouldBeRight()
+
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, null)
 
             pollerService.pollAndProcessMessage(messageSnapshot.messageState)
@@ -146,6 +150,7 @@ class PollerServiceSpec : StringSpec(
                     externalUrl
                 )
             )
+                .shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, null)
 
@@ -194,6 +199,8 @@ class PollerServiceSpec : StringSpec(
                     externalUrl
                 )
             )
+                .shouldBeRight()
+
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.REJECTED, null)
 
             pollerService.pollAndProcessMessage(messageSnapshot.messageState)
@@ -222,6 +229,7 @@ class PollerServiceSpec : StringSpec(
                     externalUrl
                 )
             )
+                .shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId, UNCONFIRMED, ExternalAppRecStatus.REJECTED)
 

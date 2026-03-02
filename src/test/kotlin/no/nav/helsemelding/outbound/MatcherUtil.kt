@@ -24,3 +24,17 @@ infix fun <L> Either<L, *>.shouldBeLeftWhere(predicate: (L) -> Boolean) {
     this.isLeft() shouldBe true
     predicate(this.swap().getOrNull()!!) shouldBe true
 }
+
+inline fun <reified R> Either<*, *>.shouldBeRightOfType(
+    crossinline block: (R) -> Unit = {}
+) {
+    this.isRight() shouldBe true
+    block(this.getOrNull() as R)
+}
+
+inline fun <reified L> Either<*, *>.shouldBeLeftOfType(
+    crossinline block: (L) -> Unit = {}
+) {
+    this.isLeft() shouldBe true
+    block(this.swap().getOrNull() as L)
+}

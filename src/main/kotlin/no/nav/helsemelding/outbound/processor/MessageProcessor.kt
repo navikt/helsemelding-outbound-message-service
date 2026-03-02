@@ -1,6 +1,7 @@
 package no.nav.helsemelding.outbound.processor
 
 import arrow.core.Either
+import arrow.core.raise.either
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.opentelemetry.api.GlobalOpenTelemetry
@@ -112,27 +113,26 @@ class MessageProcessor(
             }
     }
 
-    private suspend fun initializeState(metadata: Metadata, dialogMessageId: Uuid) {
-        try {
-            val snapshot = messageStateService.createInitialState(
-                CreateState(
-                    id = dialogMessageId,
-                    externalRefId = metadata.id,
-                    messageType = DIALOG,
-                    externalMessageUrl = URI.create(metadata.location).toURL()
-                )
+    private suspend fun initializeState(metadata: Metadata, dialogMessageId: Uuid) = either {
+        val snapshot = messageStateService.createInitialState(
+            CreateState(
+                id = dialogMessageId,
+                externalRefId = metadata.id,
+                messageType = DIALOG,
+                externalMessageUrl = URI.create(metadata.location).toURL()
             )
+        )
+            .bind()
 
-            val externalRefId = snapshot.messageState.externalRefId
-
-            log.info {
-                "externalRefId=$externalRefId State initialized (dialogMessageId=$dialogMessageId)"
-            }
-        } catch (error: Throwable) {
+        val externalRefId = snapshot.messageState.externalRefId
+        log.info {
+            "externalRefId=$externalRefId State initialized (dialogMessageId=$dialogMessageId)"
+        }
+    }
+        .onLeft { error ->
             log.error {
-                "dialogMessageId=$dialogMessageId Failed initializing state: ${error.stackTraceToString()}"
+                "dialogMessageId=$dialogMessageId Failed initializing state: $error"
             }
             metrics.registerOutgoingMessageFailed(ErrorTypeTag.STATE_INITIALIZATION_FAILED)
         }
-    }
 }

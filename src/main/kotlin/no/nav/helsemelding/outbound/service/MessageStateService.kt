@@ -1,5 +1,7 @@
 package no.nav.helsemelding.outbound.service
 
+import arrow.core.Either
+import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
@@ -16,25 +18,39 @@ interface MessageStateService {
     /**
      * Registers a newly accepted message and initializes its tracked external state.
      *
-     * This is called after the adapter confirms that the message has been created in the
-     * external system (external reference ID + message URL received). At this point no delivery
-     * or AppRec information is available, so those fields are recorded as unknown (`null`)
-     * until the poller starts retrieving real state from the external API.
+     * This function persists the initial lifecycle state for an incoming message once the external
+     * adapter has confirmed that the message has been successfully created in the external system
+     * (i.e., an external reference ID and external message URL have been assigned).
      *
-     * The provided message ID becomes the lifecycle identifier and is used to
-     * correlate all later status updates.
+     * The call enforces all lifecycle- and uniqueness constraints:
+     * - If the lifecycle ID (`createState.id`) already exists with identical external data
+     *   (external reference ID + external message URL), the operation is **idempotent** and the
+     *   existing message state is returned.
+     * - If the lifecycle ID already exists but with conflicting external data, the operation
+     *   fails with [LifecycleError.ConflictingLifecycleId].
+     * - If the external reference ID or external message URL is already associated with a different
+     *   lifecycle ID, the operation fails with [LifecycleError.ConflictingExternalReferenceId] or
+     *   [LifecycleError.ConflictingExternalMessageUrl].
      *
-     * An initial history entry is also created so that the message lifecycle begins from a
-     * well-defined starting point.
+     * Upon successful creation (or idempotent reuse), an initial history entry is also appended so
+     * that the message lifecycle begins from a well-defined and traceable starting point.
      *
-     * The operation is transactional — the message row and its initial history entry are
+     * The entire operation is transactional: the message state and its initial history entry are
      * persisted atomically.
      *
-     * @param createState Initial data for the message including the message ID, external reference ID,
-     *        message type, external message URL and creation timestamp.
-     * @return A [MessageStateSnapshot] containing the persisted message and its initial history entry.
+     * @param createState Initial message data, including:
+     *   - lifecycle message ID
+     *   - external reference ID
+     *   - message type
+     *   - external message URL
+     *   - creation timestamp
+     *
+     * @return Either:
+     *   - `Right(MessageStateSnapshot)` containing the persisted message state and its initial
+     *     history entry, or
+     *   - `Left(LifecycleError)` describing any lifecycle-related conflict or persistence failure.
      */
-    suspend fun createInitialState(createState: CreateState): MessageStateSnapshot
+    suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot>
 
     /**
      * Records an update to the external delivery state or application receipt (apprec) status
@@ -139,7 +155,7 @@ class TransactionalMessageStateService(
     private val historyRepository: MessageStateHistoryRepository,
     private val transactionRepository: MessageStateTransactionRepository
 ) : MessageStateService {
-    override suspend fun createInitialState(createState: CreateState): MessageStateSnapshot =
+    override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =
         transactionRepository.createInitialState(createState)
 
     override suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot =
@@ -165,7 +181,7 @@ class FakeTransactionalMessageStateService : MessageStateService {
             historyRepository
         )
 
-    override suspend fun createInitialState(createState: CreateState): MessageStateSnapshot =
+    override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =
         transactionRepository.createInitialState(createState)
 
     override suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot =

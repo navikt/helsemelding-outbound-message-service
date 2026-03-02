@@ -4,6 +4,7 @@ import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
+import java.net.URL
 import kotlin.uuid.Uuid
 
 sealed interface Error
@@ -45,25 +46,31 @@ sealed interface PublishError : StateError {
     ) : PublishError
 }
 
-fun StateError.withMessageContext(message: MessageState): String =
-    "Message ${message.externalRefId}: ${formatForLog()}"
+sealed interface LifecycleError : StateError {
+    data class ConflictingLifecycleId(
+        val messageId: Uuid,
+        val existingExternalRefId: Uuid?,
+        val existingExternalUrl: URL?,
+        val newExternalRefId: Uuid?,
+        val newExternalUrl: URL?
+    ) : LifecycleError
 
-private fun StateError.formatForLog(): String = when (this) {
-    is StateTransitionError.IllegalTransition ->
-        "IllegalTransition(from=$from, to=$to)"
+    data class ConflictingExternalReferenceId(
+        val externalRefId: Uuid,
+        val existingMessageId: Uuid,
+        val newMessageId: Uuid
+    ) : LifecycleError
 
-    is StateTransitionError.IllegalAppRecTransition ->
-        "IllegalAppRecTransition(from=$from, to=$to)"
+    data class ConflictingExternalMessageUrl(
+        val externalUrl: URL,
+        val existingMessageId: Uuid,
+        val newMessageId: Uuid
+    ) : LifecycleError
 
-    is StateTransitionError.IllegalCombinedState ->
-        "IllegalCombinedState(message=$message)"
-
-    is EdiAdapterError.NoApprecReturned ->
-        "NoApprecReturned(externalRefId=$externalRefId)"
-
-    is EdiAdapterError.FetchFailure ->
-        "FetchFailure(externalRefId=$externalRefId, cause=$cause)"
-
-    is PublishError.Failure ->
-        "PublishFailure(messageId=$messageId, topic=$topic, cause=$cause)"
+    data class PersistenceFailure(
+        val messageId: Uuid,
+        val reason: String
+    ) : LifecycleError
 }
+
+fun StateError.withMessageContext(message: MessageState): String = "Message ${message.externalRefId}: $this"
