@@ -1,25 +1,22 @@
-package no.nav.helsemelding.outbound.processor
+package no.nav.helsemelding.outbound.service
 
-import arrow.core.Either.Left
-import arrow.core.Either.Right
+import arrow.core.Either
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.ktor.http.HttpStatusCode.Companion.InternalServerError
+import io.ktor.http.HttpStatusCode
 import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
 import no.nav.helsemelding.outbound.FakePayloadSigningClient
 import no.nav.helsemelding.outbound.metrics.FakeMetrics
 import no.nav.helsemelding.outbound.model.DialogMessage
-import no.nav.helsemelding.outbound.receiver.fakeMessageReceiver
-import no.nav.helsemelding.outbound.service.FakeTransactionalMessageStateService
 import no.nav.helsemelding.payloadsigning.model.MessageSigningError
 import no.nav.helsemelding.payloadsigning.model.PayloadResponse
 import kotlin.uuid.Uuid
 
-class MessageProcessorSpec : StringSpec(
+class MessageLifecycleServiceSpec : StringSpec(
     {
 
         "create state if payloadSigningClient returns signed payload and ediAdapterClient returns metadata" {
@@ -27,8 +24,7 @@ class MessageProcessorSpec : StringSpec(
             val ediAdapterClient = FakeEdiAdapterClient()
             val payloadSigningClient = FakePayloadSigningClient()
             val metrics = FakeMetrics()
-            val messageProcessor = MessageProcessor(
-                fakeMessageReceiver(metrics),
+            val messageProcessor = ExposedMessageLifecycleService(
                 messageStateService,
                 ediAdapterClient,
                 payloadSigningClient,
@@ -36,7 +32,7 @@ class MessageProcessorSpec : StringSpec(
             )
 
             val payload = "data".toByteArray()
-            payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
+            payloadSigningClient.givenSignPayload(Either.Right(PayloadResponse(payload)))
 
             val uuid = Uuid.random()
             val location = "https://example.com/messages/$uuid"
@@ -44,12 +40,12 @@ class MessageProcessorSpec : StringSpec(
                 id = uuid,
                 location = location
             )
-            ediAdapterClient.givenPostMessage(Right(metadata))
+            ediAdapterClient.givenPostMessage(Either.Right(metadata))
 
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
 
             val dialogMessage = DialogMessage(uuid, payload)
-            messageProcessor.processAndSendMessage(dialogMessage)
+            messageProcessor.processAndSendMessage(dialogMessage.id, dialogMessage.payload)
 
             val messageSnapshot = messageStateService.getMessageSnapshot(uuid)
             messageSnapshot.shouldNotBeNull()
@@ -62,8 +58,7 @@ class MessageProcessorSpec : StringSpec(
             val ediAdapterClient = FakeEdiAdapterClient()
             val payloadSigningClient = FakePayloadSigningClient()
             val metrics = FakeMetrics()
-            val messageProcessor = MessageProcessor(
-                fakeMessageReceiver(metrics),
+            val messageProcessor = ExposedMessageLifecycleService(
                 messageStateService,
                 ediAdapterClient,
                 payloadSigningClient,
@@ -71,7 +66,7 @@ class MessageProcessorSpec : StringSpec(
             )
 
             val payload = "data".toByteArray()
-            payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
+            payloadSigningClient.givenSignPayload(Either.Right(PayloadResponse(payload)))
 
             val uuid = Uuid.random()
             val errorMessage500 = ErrorMessage(
@@ -81,12 +76,12 @@ class MessageProcessorSpec : StringSpec(
                 stackTrace = "[StackTrace]",
                 requestId = Uuid.random().toString()
             )
-            ediAdapterClient.givenPostMessage(Left(errorMessage500))
+            ediAdapterClient.givenPostMessage(Either.Left(errorMessage500))
 
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
 
             val dialogMessage = DialogMessage(uuid, payload)
-            messageProcessor.processAndSendMessage(dialogMessage)
+            messageProcessor.processAndSendMessage(dialogMessage.id, dialogMessage.payload)
 
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
         }
@@ -96,8 +91,7 @@ class MessageProcessorSpec : StringSpec(
             val ediAdapterClient = FakeEdiAdapterClient()
             val payloadSigningClient = FakePayloadSigningClient()
             val metrics = FakeMetrics()
-            val messageProcessor = MessageProcessor(
-                fakeMessageReceiver(metrics),
+            val messageProcessor = ExposedMessageLifecycleService(
                 messageStateService,
                 ediAdapterClient,
                 payloadSigningClient,
@@ -107,9 +101,9 @@ class MessageProcessorSpec : StringSpec(
             val uuid = Uuid.random()
 
             payloadSigningClient.givenSignPayload(
-                Left(
+                Either.Left(
                     MessageSigningError(
-                        InternalServerError.value,
+                        HttpStatusCode.InternalServerError.value,
                         "Internal Server Error"
                     )
                 )
@@ -118,7 +112,7 @@ class MessageProcessorSpec : StringSpec(
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
 
             val dialogMessage = DialogMessage(uuid, "data".toByteArray())
-            messageProcessor.processAndSendMessage(dialogMessage)
+            messageProcessor.processAndSendMessage(dialogMessage.id, dialogMessage.payload)
 
             messageStateService.getMessageSnapshot(uuid).shouldBeNull()
         }
