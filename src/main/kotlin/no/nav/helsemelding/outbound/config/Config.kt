@@ -17,6 +17,7 @@ data class Config(
     val kafka: Kafka,
     val server: Server,
     val poller: Poller,
+    val metrics: Metrics,
     val database: Database,
     val ediAdapter: EdiAdapter,
     val payloadSigning: PayloadSigning
@@ -125,6 +126,10 @@ data class Poller(
     val batchSize: Int,
     val minAgeSeconds: Duration,
     val scheduleInterval: Duration
+)
+
+data class Metrics(
+    val metricsUpdatingInterval: Duration
 )
 
 data class Database(

@@ -16,6 +16,7 @@ import no.nav.helsemelding.outbound.container
 import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.CreateStateResult
+import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.REJECTED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
@@ -544,6 +545,183 @@ class MessageRepositorySpec : StringSpec(
                     messageRepository.findOrNull(externalRefId2)!!.lastPolledAt shouldNotBe null
 
                     messageRepository.findOrNull(externalRefId3)!!.lastPolledAt shouldBe null
+                }
+            }
+        }
+
+        "countByExternalDeliveryState should return correct counts for each ExternalDeliveryState including null" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val now = Clock.System.now()
+
+                    val externalRefId1 = Uuid.random()
+                    val externalRefId2 = Uuid.random()
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId1,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId2,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
+                        URI.create(MESSAGE3).toURL(),
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId1,
+                        ACKNOWLEDGED,
+                        null,
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId2,
+                        ACKNOWLEDGED,
+                        null,
+                        now
+                    )
+
+                    val counts = messageRepository.countByExternalDeliveryState()
+
+                    counts.size shouldBe 2
+                    counts[ACKNOWLEDGED] shouldBe 2
+                    counts[null] shouldBe 1
+                }
+            }
+        }
+
+        "countByAppRecState should return correct counts for each AppRecStatus including null" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val now = Clock.System.now()
+
+                    val externalRefId1 = Uuid.random()
+                    val externalRefId2 = Uuid.random()
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId1,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId2,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
+                        URI.create(MESSAGE3).toURL(),
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId1,
+                        null,
+                        AppRecStatus.OK,
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId2,
+                        null,
+                        AppRecStatus.OK,
+                        now
+                    )
+
+                    val counts = messageRepository.countByAppRecState()
+
+                    counts.size shouldBe 2
+                    counts[AppRecStatus.OK] shouldBe 2
+                    counts[null] shouldBe 1
+                }
+            }
+        }
+
+        "countByExternalDeliveryStateAndAppRecStatus should return correct counts for each ExternalDeliveryState-AppRecStatus combination" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+
+                suspendTransaction(database) {
+                    val messageRepository = ExposedMessageRepository(database)
+
+                    val now = Clock.System.now()
+
+                    val externalRefId1 = Uuid.random()
+                    val externalRefId2 = Uuid.random()
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId1,
+                        DIALOG,
+                        URI.create(MESSAGE1).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        externalRefId2,
+                        DIALOG,
+                        URI.create(MESSAGE2).toURL(),
+                        now
+                    )
+
+                    messageRepository.createState(
+                        Uuid.random(),
+                        Uuid.random(),
+                        DIALOG,
+                        URI.create(MESSAGE3).toURL(),
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId1,
+                        ExternalDeliveryState.ACKNOWLEDGED,
+                        AppRecStatus.OK,
+                        now
+                    )
+
+                    messageRepository.updateState(
+                        externalRefId2,
+                        ExternalDeliveryState.ACKNOWLEDGED,
+                        AppRecStatus.OK,
+                        now
+                    )
+
+                    val counts = messageRepository.countByExternalDeliveryStateAndAppRecStatus()
+
+                    counts.size shouldBe 2
+                    counts[Pair(ExternalDeliveryState.ACKNOWLEDGED, AppRecStatus.OK)] shouldBe 2
+                    counts[Pair(null, null)] shouldBe 1
                 }
             }
         }

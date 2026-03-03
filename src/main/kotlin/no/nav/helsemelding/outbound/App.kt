@@ -12,6 +12,7 @@ import io.ktor.server.netty.Netty
 import io.ktor.utils.io.CancellationException
 import io.micrometer.prometheus.PrometheusMeterRegistry
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import no.nav.helsemelding.outbound.evaluator.AppRecTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.StateTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.TransportStatusTranslator
@@ -27,7 +28,9 @@ import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateHistoryRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateTransactionRepository
 import no.nav.helsemelding.outbound.service.MessageStateService
+import no.nav.helsemelding.outbound.service.MetricsService
 import no.nav.helsemelding.outbound.service.PollerService
+import no.nav.helsemelding.outbound.service.PrometheusMetricsService
 import no.nav.helsemelding.outbound.service.StateEvaluatorService
 import no.nav.helsemelding.outbound.service.TransactionalMessageStateService
 import no.nav.helsemelding.outbound.util.coroutineScope
@@ -67,7 +70,14 @@ fun main() = SuspendApp {
 
             messageProcessor.processMessages(scope)
 
-            schedulePoller(poller)
+            scope.launch { schedulePoller(poller) }
+
+            scope.launch {
+                scheduleMetricsRefreshing(
+                    metricsService(deps.database),
+                    metrics
+                )
+            }
 
             awaitCancellation()
         }
@@ -88,6 +98,28 @@ private suspend fun schedulePoller(pollerService: PollerService): Long {
     return Schedule
         .spaced<Unit>(config().poller.scheduleInterval)
         .repeat { pollerService.pollMessages() }
+}
+
+private suspend fun scheduleMetricsRefreshing(
+    metricsService: MetricsService,
+    metrics: Metrics
+): Long {
+    return Schedule
+        .spaced<Unit>(config().metrics.metricsUpdatingInterval)
+        .repeat {
+            refreshMetrics(metricsService, metrics)
+        }
+}
+
+private suspend fun refreshMetrics(metricsService: MetricsService, metrics: Metrics) {
+    val transportStateCounts = metricsService.countByTransportState()
+    metrics.registerTransportStateDistribution(transportStateCounts)
+
+    val appRecStateCounts = metricsService.countByAppRecState()
+    metrics.registerAppRecStateDistribution(appRecStateCounts)
+
+    val deliveryStateCounts = metricsService.countByMessageDeliveryState()
+    metrics.registerMessageDeliveryStateDistribution(deliveryStateCounts)
 }
 
 private fun logError(t: Throwable) = log.error { "Shutdown state-service due to: ${t.stackTraceToString()}" }
@@ -116,6 +148,11 @@ private fun messageStateService(database: Database): MessageStateService {
         messageStateHistoryRepository,
         messageStateTransactionRepository
     )
+}
+
+private fun metricsService(database: Database): MetricsService {
+    val messageRepository = ExposedMessageRepository(database)
+    return PrometheusMetricsService(messageRepository)
 }
 
 private fun messageReceiver(

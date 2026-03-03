@@ -26,6 +26,7 @@ import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder.ASC_NULLS_FIRST
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNull
@@ -34,6 +35,7 @@ import org.jetbrains.exposed.v1.datetime.CurrentTimestamp
 import org.jetbrains.exposed.v1.datetime.timestamp
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
@@ -90,6 +92,12 @@ interface MessageRepository {
     suspend fun findForPolling(): List<MessageState>
 
     suspend fun markPolled(externalRefIds: List<Uuid>): Int
+
+    suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long>
+
+    suspend fun countByAppRecState(): Map<AppRecStatus?, Long>
+
+    suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>
 }
 
 class ExposedMessageRepository(private val database: Database) : MessageRepository {
@@ -174,6 +182,40 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             it[lastPolledAt] = CurrentTimestamp
         }
     }
+
+    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = suspendTransaction(database) {
+        Messages
+            .select(externalDeliveryState, Messages.id.count())
+            .groupBy(externalDeliveryState)
+            .associate { row ->
+                val state = row[externalDeliveryState]
+                val count = row[Messages.id.count()]
+                state to count
+            }
+    }
+
+    override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> = suspendTransaction(database) {
+        Messages
+            .select(appRecStatus, Messages.id.count())
+            .groupBy(appRecStatus)
+            .associate { row ->
+                val state = row[appRecStatus]
+                val count = row[Messages.id.count()]
+                state to count
+            }
+    }
+
+    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> =
+        suspendTransaction(database) {
+            Messages
+                .select(externalDeliveryState, appRecStatus, Messages.id.count())
+                .groupBy(externalDeliveryState, appRecStatus)
+                .associate { row ->
+                    val deliveryState = row[externalDeliveryState]
+                    val appRecState = row[appRecStatus]
+                    Pair(deliveryState, appRecState) to row[Messages.id.count()]
+                }
+        }
 
     private fun lifecycleId(
         incomingId: Uuid,
@@ -260,6 +302,9 @@ class FakeMessageRepository : MessageRepository {
     private val poller = config().poller
     private val messagesById = mutableMapOf<Uuid, MessageState>()
     private val byExternalRefId = mutableMapOf<Uuid, Uuid>()
+    private var countByExternalDeliveryState = mutableMapOf<ExternalDeliveryState?, Long>()
+    private var countByAppRecStatus = mutableMapOf<AppRecStatus?, Long>()
+    private var countByExternalDeliveryStateAndAppRecStatus = mutableMapOf<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>()
 
     override suspend fun createState(
         id: Uuid,
@@ -373,6 +418,24 @@ class FakeMessageRepository : MessageRepository {
             }
         }
         return count
+    }
+
+    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = countByExternalDeliveryState
+
+    override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> = countByAppRecStatus
+
+    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> = countByExternalDeliveryStateAndAppRecStatus
+
+    fun setCountByExternalDeliveryState(values: Map<ExternalDeliveryState?, Long>) {
+        countByExternalDeliveryState = values.toMutableMap()
+    }
+
+    fun setCountByAppRecState(values: Map<AppRecStatus?, Long>) {
+        countByAppRecStatus = values.toMutableMap()
+    }
+
+    fun setCountByExternalDeliveryStateAndAppRecStatus(values: Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>) {
+        countByExternalDeliveryStateAndAppRecStatus = values.toMutableMap()
     }
 
     private fun idConflict(

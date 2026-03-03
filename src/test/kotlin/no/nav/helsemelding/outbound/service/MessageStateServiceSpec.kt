@@ -13,6 +13,9 @@ import no.nav.helsemelding.outbound.model.ExternalDeliveryState.REJECTED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.model.UpdateState
+import no.nav.helsemelding.outbound.repository.FakeMessageRepository
+import no.nav.helsemelding.outbound.repository.FakeMessageStateHistoryRepository
+import no.nav.helsemelding.outbound.repository.FakeMessageStateTransactionRepository
 import java.net.URI
 import kotlin.uuid.Uuid
 
@@ -24,6 +27,18 @@ private const val MESSAGE5 = "http://example.com/messages/5"
 
 class MessageStateServiceSpec : StringSpec(
     {
+
+        val messageRepository = FakeMessageRepository()
+        val historyRepository = FakeMessageStateHistoryRepository()
+        val transactionRepository = FakeMessageStateTransactionRepository(
+            messageRepository,
+            historyRepository
+        )
+        val messageStateService = TransactionalMessageStateService(
+            messageRepository,
+            historyRepository,
+            transactionRepository
+        )
 
         "Create initial state – creates message with null external states and one baseline history entry" {
             val messageStateService = FakeTransactionalMessageStateService()
