@@ -48,8 +48,8 @@ spec:
     retentionHours: 168
     segmentHours: 168
   acl:
-    - access: readwrite
-      application: outbound-message-service
+    - access: write
+      application: inbound-message-service
       team: helsemelding
     - access: read
       application: kafka-manager
