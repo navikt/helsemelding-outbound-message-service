@@ -71,6 +71,21 @@ sealed interface LifecycleError : StateError {
         val messageId: Uuid,
         val reason: String
     ) : LifecycleError
+
+    data class ConflictingMessageId(
+        val messageId: Uuid,
+        val reason: String
+    ) : LifecycleError
+
+    data class SigningFailure(
+        val messageId: Uuid,
+        val reason: String
+    ) : LifecycleError
+
+    data class SendMessageFailure(
+        val messageId: Uuid,
+        val reason: String
+    ) : LifecycleError
 }
 
 fun StateError.withMessageContext(message: MessageState): String = "Message ${message.externalRefId}: $this"

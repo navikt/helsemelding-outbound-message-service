@@ -101,7 +101,7 @@ class MessageStateServiceSpec : StringSpec(
         "Get message snapshot – returns null when missing" {
             val messageStateService = FakeTransactionalMessageStateService()
 
-            messageStateService.getMessageSnapshot(Uuid.random()).shouldBeNull()
+            messageStateService.getMessageSnapshotByExternalRefId(Uuid.random()).shouldBeNull()
         }
 
         "Find pollable messages – only messages with NULL, ACKNOWLEDGED or UNCONFIRMED delivery state" {
@@ -252,14 +252,14 @@ class MessageStateServiceSpec : StringSpec(
                 )
             )
 
-            messageStateService.getMessageSnapshot(externalRefId1)!!.messageState.lastPolledAt.shouldBeNull()
-            messageStateService.getMessageSnapshot(externalRefId2)!!.messageState.lastPolledAt.shouldBeNull()
+            messageStateService.getMessageSnapshotByExternalRefId(externalRefId1)!!.messageState.lastPolledAt.shouldBeNull()
+            messageStateService.getMessageSnapshotByExternalRefId(externalRefId2)!!.messageState.lastPolledAt.shouldBeNull()
 
             val updated = messageStateService.markAsPolled(listOf(externalRefId1))
             updated shouldBe 1
 
-            messageStateService.getMessageSnapshot(externalRefId1)!!.messageState.lastPolledAt shouldNotBe null
-            messageStateService.getMessageSnapshot(externalRefId2)!!.messageState.lastPolledAt shouldBe null
+            messageStateService.getMessageSnapshotByExternalRefId(externalRefId1)!!.messageState.lastPolledAt shouldNotBe null
+            messageStateService.getMessageSnapshotByExternalRefId(externalRefId2)!!.messageState.lastPolledAt shouldBe null
         }
     }
 )

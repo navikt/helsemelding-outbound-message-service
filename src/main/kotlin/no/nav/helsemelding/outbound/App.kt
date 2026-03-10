@@ -26,6 +26,7 @@ import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateHistoryRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateTransactionRepository
+import no.nav.helsemelding.outbound.service.MessageLifecycleOrchestratorService
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.PollerService
 import no.nav.helsemelding.outbound.service.StateEvaluatorService
@@ -50,11 +51,16 @@ fun main() = SuspendApp {
                 statusMessagePublisher(deps.kafkaPublisher)
             )
 
-            val messageProcessor = MessageProcessor(
-                messageReceiver = messageReceiver(deps.kafkaReceiver, metrics),
+            val messageLifecycleService = MessageLifecycleOrchestratorService(
                 messageStateService = messageStateService(deps.database),
                 ediAdapterClient = deps.ediAdapterClient,
                 payloadSigningClient = deps.payloadSigningClient,
+                metrics = metrics
+            )
+
+            val messageProcessor = MessageProcessor(
+                messageReceiver = messageReceiver(deps.kafkaReceiver, metrics),
+                messageLifecycleService = messageLifecycleService,
                 metrics = metrics
             )
 
