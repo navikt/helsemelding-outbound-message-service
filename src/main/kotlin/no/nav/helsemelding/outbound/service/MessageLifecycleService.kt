@@ -31,6 +31,19 @@ private val log = KotlinLogging.logger {}
 const val BASE64_ENCODING = "base64"
 
 interface MessageLifecycleService {
+    /**
+     * Registers a new outgoing message by signing its payload, send message to nhn through
+     * the edi-adapter, and initializing its tracked lifecycle state.
+     *
+     * The operation is **idempotent**: if a message with the given [lifecycleId] has already been
+     * registered, it returns [LifecycleError.ConflictingMessageId] immediately without performing
+     * any side effects (no signing, no sending, no initialization of state).
+     *
+     * @param lifecycleId The internal unique identifier for this message, used for idempotency.
+     * @param payload The raw XML payload to sign and send.
+     *
+     * @return A [MessageStateSnapshot] representing the newly created state, or a [LifecycleError].
+     */
     suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
         payload: ByteArray
