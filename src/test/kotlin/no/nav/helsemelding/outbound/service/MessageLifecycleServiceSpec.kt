@@ -29,18 +29,24 @@ import kotlin.uuid.Uuid
 class MessageLifecycleServiceSpec : StringSpec(
     {
 
-        "registering with existing messageId should return lifecycleError" {
-            val messageStateService = FakeTransactionalMessageStateService()
-            val ediAdapterClient = FakeEdiAdapterClient()
-            val payloadSigningClient = FakePayloadSigningClient()
-            val metrics = FakeMetrics()
-            val messageLifecycleService = MessageLifecycleOrchestratorService(
+        lateinit var messageStateService: FakeTransactionalMessageStateService
+        lateinit var ediAdapterClient: FakeEdiAdapterClient
+        lateinit var payloadSigningClient: FakePayloadSigningClient
+        lateinit var messageLifecycleService: MessageLifecycleService
+
+        beforeEach {
+            messageStateService = FakeTransactionalMessageStateService()
+            ediAdapterClient = FakeEdiAdapterClient()
+            payloadSigningClient = FakePayloadSigningClient()
+            messageLifecycleService = MessageLifecycleOrchestratorService(
                 messageStateService,
                 ediAdapterClient,
                 payloadSigningClient,
-                metrics
+                FakeMetrics()
             )
+        }
 
+        "registering with existing messageId should return lifecycleError" {
             val messageId = Uuid.random()
             val externalRefId = Uuid.random()
             val externalMessageUrl = URI("https://example.com/messages/$externalRefId").toURL()
@@ -65,17 +71,6 @@ class MessageLifecycleServiceSpec : StringSpec(
         }
 
         "create state if payloadSigningClient returns signed payload and ediAdapterClient returns metadata" {
-            val messageStateService = FakeTransactionalMessageStateService()
-            val ediAdapterClient = FakeEdiAdapterClient()
-            val payloadSigningClient = FakePayloadSigningClient()
-            val metrics = FakeMetrics()
-            val messageLifecycleService = MessageLifecycleOrchestratorService(
-                messageStateService,
-                ediAdapterClient,
-                payloadSigningClient,
-                metrics
-            )
-
             val payload = "data".toByteArray()
             payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
 
@@ -98,17 +93,6 @@ class MessageLifecycleServiceSpec : StringSpec(
         }
 
         "no state created if payloadSigningClient returns signed payload and ediAdapterClient returns metadata, but creating state fails" {
-            val messageStateService = FakeTransactionalMessageStateService()
-            val ediAdapterClient = FakeEdiAdapterClient()
-            val payloadSigningClient = FakePayloadSigningClient()
-            val metrics = FakeMetrics()
-            val messageLifecycleService = MessageLifecycleOrchestratorService(
-                messageStateService,
-                ediAdapterClient,
-                payloadSigningClient,
-                metrics
-            )
-
             val payload = "data".toByteArray()
             payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
 
@@ -134,17 +118,6 @@ class MessageLifecycleServiceSpec : StringSpec(
         }
 
         "no state created if payloadSigningClient returns signed payload and ediAdapterClient returns error message" {
-            val messageStateService = FakeTransactionalMessageStateService()
-            val ediAdapterClient = FakeEdiAdapterClient()
-            val payloadSigningClient = FakePayloadSigningClient()
-            val metrics = FakeMetrics()
-            val messageLifecycleService = MessageLifecycleOrchestratorService(
-                messageStateService,
-                ediAdapterClient,
-                payloadSigningClient,
-                metrics
-            )
-
             val payload = "data".toByteArray()
             payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
 
@@ -170,17 +143,6 @@ class MessageLifecycleServiceSpec : StringSpec(
         }
 
         "no state created if payloadSigningClient returns signing error" {
-            val messageStateService = FakeTransactionalMessageStateService()
-            val ediAdapterClient = FakeEdiAdapterClient()
-            val payloadSigningClient = FakePayloadSigningClient()
-            val metrics = FakeMetrics()
-            val messageLifecycleService = MessageLifecycleOrchestratorService(
-                messageStateService,
-                ediAdapterClient,
-                payloadSigningClient,
-                metrics
-            )
-
             val messageId = Uuid.random()
             val errorMessage = "Internal Server Error"
             payloadSigningClient.givenSignPayload(
