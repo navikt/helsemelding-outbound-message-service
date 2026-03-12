@@ -101,7 +101,7 @@ class PollerServiceSpec : StringSpec(
 
             pollerService.pollAndProcessMessage(snapshot.messageState)
 
-            val current = messageStateService.getMessageSnapshot(externalRefId)!!
+            val current = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
             current.messageState.externalDeliveryState shouldBe null
             current.messageState.appRecStatus shouldBe null
             statusMessagePublisher.published shouldBe emptyList()
@@ -128,7 +128,7 @@ class PollerServiceSpec : StringSpec(
 
             pollerService.pollAndProcessMessage(messageSnapshot.messageState)
 
-            val currentMessageSnapshot = messageStateService.getMessageSnapshot(externalRefId)!!
+            val currentMessageSnapshot = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
             currentMessageSnapshot.messageState.externalDeliveryState shouldBe ACKNOWLEDGED
             currentMessageSnapshot.messageState.appRecStatus shouldBe null
 
@@ -237,7 +237,7 @@ class PollerServiceSpec : StringSpec(
 
             pollerService.pollAndProcessMessage(messageState)
 
-            val currentMessageSnapshot = messageStateService.getMessageSnapshot(externalRefId)!!
+            val currentMessageSnapshot = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
             currentMessageSnapshot.messageState.externalDeliveryState shouldBe null
             currentMessageSnapshot.messageState.appRecStatus shouldBe null
 

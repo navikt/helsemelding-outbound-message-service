@@ -87,7 +87,9 @@ interface MessageRepository {
         lastStateChange: Instant
     ): MessageState
 
-    suspend fun findOrNull(externalRefId: Uuid): MessageState?
+    suspend fun findByExternalReferenceId(externalRefId: Uuid): MessageState?
+
+    suspend fun findById(id: Uuid): MessageState?
 
     suspend fun findForPolling(): List<MessageState>
 
@@ -110,7 +112,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         externalMessageUrl: URL,
         lastStateChange: Instant
     ): Either<LifecycleError, CreateStateResult> = either {
-        findByIdOrNull(id)?.let { existing ->
+        findById(id)?.let { existing ->
             return lifecycleId(
                 id,
                 externalRefId,
@@ -130,7 +132,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             insert[Messages.updatedAt] = CurrentTimestamp
         }
 
-        val created = findByIdOrNull(id) ?: return uniquenessConflict(
+        val created = findById(id) ?: return uniquenessConflict(
             incomingId = id,
             incomingExternalRefId = externalRefId,
             incomingUrl = externalMessageUrl
@@ -154,7 +156,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             .single()
             .toMessageState()
 
-    override suspend fun findOrNull(externalRefId: Uuid): MessageState? = suspendTransaction(database) {
+    override suspend fun findByExternalReferenceId(externalRefId: Uuid): MessageState? = suspendTransaction(database) {
         Messages
             .selectAll().where { Messages.externalRefId eq externalRefId }
             .singleOrNull()
@@ -244,7 +246,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         incomingExternalRefId: Uuid,
         incomingUrl: URL
     ): Either<LifecycleError, CreateStateResult> {
-        val existingByRef = findOrNull(incomingExternalRefId)
+        val existingByRef = findByExternalReferenceId(incomingExternalRefId)
         if (existingByRef != null) {
             return LifecycleError.ConflictingExternalReferenceId(
                 externalRefId = incomingExternalRefId,
@@ -270,7 +272,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             .left()
     }
 
-    private suspend fun findByIdOrNull(id: Uuid): MessageState? = suspendTransaction(database) {
+    override suspend fun findById(id: Uuid): MessageState? = suspendTransaction(database) {
         Messages
             .selectAll().where { Messages.id eq id }
             .singleOrNull()
@@ -382,9 +384,13 @@ class FakeMessageRepository : MessageRepository {
         return updated
     }
 
-    override suspend fun findOrNull(externalRefId: Uuid): MessageState? {
+    override suspend fun findByExternalReferenceId(externalRefId: Uuid): MessageState? {
         val messageId = byExternalRefId[externalRefId] ?: return null
         return messagesById[messageId]
+    }
+
+    override suspend fun findById(id: Uuid): MessageState? {
+        return messagesById[id]
     }
 
     override suspend fun findForPolling(): List<MessageState> =

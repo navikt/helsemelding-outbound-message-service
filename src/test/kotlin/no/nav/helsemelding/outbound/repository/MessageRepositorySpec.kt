@@ -293,7 +293,7 @@ class MessageRepositorySpec : StringSpec(
                 val messageRepository = ExposedMessageRepository(database)
 
                 val externalRefId = Uuid.random()
-                messageRepository.findOrNull(externalRefId) shouldBe null
+                messageRepository.findByExternalReferenceId(externalRefId) shouldBe null
             }
         }
 
@@ -316,7 +316,7 @@ class MessageRepositorySpec : StringSpec(
                         lastStateChange = Clock.System.now()
                     )
 
-                    messageRepository.findOrNull(externalRefId)!!.externalRefId shouldBe externalRefId
+                    messageRepository.findByExternalReferenceId(externalRefId)!!.externalRefId shouldBe externalRefId
                 }
             }
         }
@@ -541,10 +541,10 @@ class MessageRepositorySpec : StringSpec(
 
                     messageRepository.markPolled(listOf(externalRefId1, externalRefId2)) shouldBe 2
 
-                    messageRepository.findOrNull(externalRefId1)!!.lastPolledAt shouldNotBe null
-                    messageRepository.findOrNull(externalRefId2)!!.lastPolledAt shouldNotBe null
+                    messageRepository.findByExternalReferenceId(externalRefId1)!!.lastPolledAt shouldNotBe null
+                    messageRepository.findByExternalReferenceId(externalRefId2)!!.lastPolledAt shouldNotBe null
 
-                    messageRepository.findOrNull(externalRefId3)!!.lastPolledAt shouldBe null
+                    messageRepository.findByExternalReferenceId(externalRefId3)!!.lastPolledAt shouldBe null
                 }
             }
         }
