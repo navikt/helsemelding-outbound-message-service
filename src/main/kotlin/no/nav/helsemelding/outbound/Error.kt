@@ -66,26 +66,23 @@ sealed interface LifecycleError : StateError {
         val existingMessageId: Uuid,
         val newMessageId: Uuid
     ) : LifecycleError
+}
 
+sealed interface InfrastructureFailure : LifecycleError {
     data class PersistenceFailure(
         val messageId: Uuid,
         val reason: String
-    ) : LifecycleError
+    ) : InfrastructureFailure
 
-    data class ConflictingMessageId(
+    data class PayloadSigningFailure(
         val messageId: Uuid,
         val reason: String
-    ) : LifecycleError
+    ) : InfrastructureFailure
 
-    data class SigningFailure(
+    data class ExternalSendFailure(
         val messageId: Uuid,
         val reason: String
-    ) : LifecycleError
-
-    data class SendMessageFailure(
-        val messageId: Uuid,
-        val reason: String
-    ) : LifecycleError
+    ) : InfrastructureFailure
 }
 
 fun StateError.withMessageContext(message: MessageState): String = "Message ${message.externalRefId}: $this"

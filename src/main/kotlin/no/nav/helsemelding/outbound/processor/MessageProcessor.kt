@@ -40,11 +40,11 @@ class MessageProcessor(
 
     private suspend fun processMessage(dialogMessage: DialogMessage) {
         tracer.withSpan("Process and send message") {
-            val either = messageLifecycleService.registerOutgoingMessage(dialogMessage.id, dialogMessage.payload)
-            either.fold(
-                { log.error { "Registering message failed: messageId=${dialogMessage.id}, error=$it" } },
-                { log.info { "${it.messageState.logPrefix()} Registering message succeeded: messageId=${dialogMessage.id}" } }
-            )
+            messageLifecycleService.registerOutgoingMessage(dialogMessage.id, dialogMessage.payload)
+                .fold(
+                    { log.error { "Registering message failed: messageId=${dialogMessage.id}, error=$it" } },
+                    { log.info { "${it.messageState.logPrefix()} Registering message succeeded: messageId=${dialogMessage.id}" } }
+                )
         }
     }
 }

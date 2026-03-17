@@ -1,17 +1,16 @@
 package no.nav.helsemelding.outbound.service
 
 import arrow.core.Either
-import arrow.core.Either.Left
 import arrow.core.raise.either
+import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
+import no.nav.helsemelding.outbound.InfrastructureFailure.ExternalSendFailure
+import no.nav.helsemelding.outbound.InfrastructureFailure.PayloadSigningFailure
 import no.nav.helsemelding.outbound.LifecycleError
-import no.nav.helsemelding.outbound.LifecycleError.ConflictingMessageId
-import no.nav.helsemelding.outbound.LifecycleError.SendMessageFailure
-import no.nav.helsemelding.outbound.LifecycleError.SigningFailure
 import no.nav.helsemelding.outbound.metrics.ErrorTypeTag
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.model.CreateState
@@ -32,17 +31,30 @@ const val BASE64_ENCODING = "base64"
 
 interface MessageLifecycleService {
     /**
-     * Registers a new outgoing message by signing its payload, send message to nhn through
-     * the edi-adapter, and initializing its tracked lifecycle state.
+     * Registers a new outgoing message by signing its payload, sending it to NHN via
+     * the EDI adapter, and initializing its tracked lifecycle state.
      *
-     * The operation is **idempotent**: if a message with the given [lifecycleId] has already been
-     * registered, it returns [LifecycleError.ConflictingMessageId] immediately without performing
-     * any side effects (no signing, no sending, no initialization of state).
+     * This operation is **idempotent** with respect to [lifecycleId]:
      *
-     * @param lifecycleId The internal unique identifier for this message, used for idempotency.
+     * * If a message with the given [lifecycleId] has **not** been registered,
+     * the payload is signed, sent to the external system, and the resulting
+     * external reference and URL are persisted as the initial lifecycle state.
+     *
+     * * If a message with the given [lifecycleId] has **already been registered**,
+     * the existing [MessageStateSnapshot] is returned and **no side effects**
+     * are performed (no signing, no external call, no state re-initialization).
+     *
+     * This guarantees that repeated invocations (e.g. due to retries, message
+     * reprocessing, or duplicate production) will not result in duplicate external
+     * messages being created.
+     *
+     * @param lifecycleId The internal unique identifier for this message. `Acts as the idempotency key.`
+     *
      * @param payload The raw XML payload to sign and send.
      *
-     * @return A [MessageStateSnapshot] representing the newly created state, or a [LifecycleError].
+     * @return [Either]:
+     *  - `Right(MessageStateSnapshot)` containing the existing or newly created state, or
+     *  - `Left(LifecycleError)` if a lifecycle constraint is violated or persistence fails.
      */
     suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
@@ -63,7 +75,8 @@ class MessageLifecycleOrchestratorService(
     ): Either<LifecycleError, MessageStateSnapshot> {
         return messageStateService
             .getMessageSnapshotById(lifecycleId)
-            ?.let { Left(ConflictingMessageId(lifecycleId, "Id has already been registered")) }
+            ?.also { log.debug { "Lifecycle id: $lifecycleId already exists - idempotent handling triggered" } }
+            ?.right()
             ?: registerNewMessage(lifecycleId, payload)
     }
 
@@ -92,7 +105,7 @@ class MessageLifecycleOrchestratorService(
         payloadResponse.bytes
     }
         .mapLeft { messageSigningError ->
-            SigningFailure(lifecycleId, messageSigningError.message)
+            PayloadSigningFailure(lifecycleId, messageSigningError.message)
         }
         .onLeft { messageSigningError ->
             log.error { "messageId=$lifecycleId Failed signing message: $messageSigningError" }
@@ -118,7 +131,7 @@ class MessageLifecycleOrchestratorService(
         metadata
     }
         .mapLeft { errorMessage ->
-            SendMessageFailure(lifecycleId, errorMessage.error ?: "Calling edi adapter failed")
+            ExternalSendFailure(lifecycleId, errorMessage.error ?: "Calling edi adapter failed")
         }
         .onLeft { error ->
             log.error { "messageId=$lifecycleId Failed sending message to edi adapter: $error" }

@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.right
+import no.nav.helsemelding.outbound.InfrastructureFailure
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.config
 import no.nav.helsemelding.outbound.model.AppRecStatus
@@ -223,7 +224,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             )
                 .left()
         }
-        return LifecycleError.PersistenceFailure(
+        return InfrastructureFailure.PersistenceFailure(
             messageId = incomingId,
             reason = "Insert was ignored but no existing row found by id, externalRefId or url"
         )

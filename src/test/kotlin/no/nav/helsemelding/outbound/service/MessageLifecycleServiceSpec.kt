@@ -13,10 +13,9 @@ import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
 import no.nav.helsemelding.outbound.FakePayloadSigningClient
-import no.nav.helsemelding.outbound.LifecycleError.ConflictingMessageId
-import no.nav.helsemelding.outbound.LifecycleError.PersistenceFailure
-import no.nav.helsemelding.outbound.LifecycleError.SendMessageFailure
-import no.nav.helsemelding.outbound.LifecycleError.SigningFailure
+import no.nav.helsemelding.outbound.InfrastructureFailure.ExternalSendFailure
+import no.nav.helsemelding.outbound.InfrastructureFailure.PayloadSigningFailure
+import no.nav.helsemelding.outbound.InfrastructureFailure.PersistenceFailure
 import no.nav.helsemelding.outbound.metrics.FakeMetrics
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
@@ -46,7 +45,7 @@ class MessageLifecycleServiceSpec : StringSpec(
             )
         }
 
-        "registering with existing messageId should return lifecycleError" {
+        "registering with existing messageId should return existing messageStateSnapshot" {
             val messageId = Uuid.random()
             val externalRefId = Uuid.random()
             val externalMessageUrl = URI("https://example.com/messages/$externalRefId").toURL()
@@ -63,11 +62,11 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService.getMessageSnapshotById(messageId).shouldNotBeNull()
 
             val payload = "data".toByteArray()
-            messageLifecycleService.registerOutgoingMessage(messageId, payload)
-                .shouldBeLeftOfType<ConflictingMessageId> { lifecycleError ->
-                    lifecycleError.messageId shouldBe messageId
-                    lifecycleError.reason shouldBe "Id has already been registered"
-                }
+            val registeredMessageSnapshot =
+                messageLifecycleService.registerOutgoingMessage(messageId, payload).shouldBeRight()
+            val messageStateSnapshot = messageStateService.getMessageSnapshotById(messageId).shouldNotBeNull()
+
+            registeredMessageSnapshot shouldBeEqualUsingFields messageStateSnapshot
         }
 
         "create state if payloadSigningClient returns signed payload and ediAdapterClient returns metadata" {
@@ -104,7 +103,15 @@ class MessageLifecycleServiceSpec : StringSpec(
                 location = location
             )
             ediAdapterClient.givenPostMessage(Right(metadata))
-            messageStateService.givenInitialState(messageId, Left(PersistenceFailure(messageId, "Failed to persist")))
+            messageStateService.givenInitialState(
+                messageId,
+                Left(
+                    PersistenceFailure(
+                        messageId,
+                        "Failed to persist"
+                    )
+                )
+            )
 
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
 
@@ -135,7 +142,7 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
 
             messageLifecycleService.registerOutgoingMessage(messageId, payload)
-                .shouldBeLeftOfType<SendMessageFailure> { lifecycleError ->
+                .shouldBeLeftOfType<ExternalSendFailure> { lifecycleError ->
                     lifecycleError.messageId shouldBe messageId
                     lifecycleError.reason shouldBe errorMessage
                 }
@@ -158,7 +165,7 @@ class MessageLifecycleServiceSpec : StringSpec(
 
             val payload = "data".toByteArray()
             messageLifecycleService.registerOutgoingMessage(messageId, payload)
-                .shouldBeLeftOfType<SigningFailure> { lifecycleError ->
+                .shouldBeLeftOfType<PayloadSigningFailure> { lifecycleError ->
                     lifecycleError.messageId shouldBe messageId
                     lifecycleError.reason shouldBe errorMessage
                 }
