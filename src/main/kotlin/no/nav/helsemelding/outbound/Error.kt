@@ -4,6 +4,7 @@ import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
+import no.nav.helsemelding.payloadsigning.model.MessageSigningError
 import java.net.URL
 import kotlin.uuid.Uuid
 
@@ -36,6 +37,18 @@ sealed interface EdiAdapterError : StateError {
         val externalRefId: Uuid,
         val cause: ErrorMessage
     ) : EdiAdapterError
+
+    data class SendFailure(
+        val lifecycleId: Uuid,
+        val cause: ErrorMessage
+    ) : EdiAdapterError
+}
+
+sealed interface SigningServiceError : StateError {
+    data class SignFailure(
+        val lifecycleId: Uuid,
+        val cause: MessageSigningError
+    ) : SigningServiceError
 }
 
 sealed interface PublishError : StateError {
@@ -77,14 +90,12 @@ sealed interface LifecycleError : StateError {
 
     sealed interface ExternalFailure : LifecycleError
 
-    data class SigningServiceFailure(
-        val messageId: Uuid,
-        val reason: String
+    data class SigningFailure(
+        val cause: SigningServiceError
     ) : ExternalFailure
 
-    data class EdiAdapterFailure(
-        val messageId: Uuid,
-        val cause: ErrorMessage
+    data class EdiFailure(
+        val cause: EdiAdapterError
     ) : ExternalFailure
 }
 
