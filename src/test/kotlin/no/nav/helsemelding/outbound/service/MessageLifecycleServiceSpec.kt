@@ -13,9 +13,9 @@ import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
 import no.nav.helsemelding.outbound.FakePayloadSigningClient
-import no.nav.helsemelding.outbound.InfrastructureFailure.ExternalSendFailure
-import no.nav.helsemelding.outbound.InfrastructureFailure.PayloadSigningFailure
-import no.nav.helsemelding.outbound.InfrastructureFailure.PersistenceFailure
+import no.nav.helsemelding.outbound.LifecycleError.EdiAdapterFailure
+import no.nav.helsemelding.outbound.LifecycleError.PersistenceFailure
+import no.nav.helsemelding.outbound.LifecycleError.SigningServiceFailure
 import no.nav.helsemelding.outbound.metrics.FakeMetrics
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
@@ -142,9 +142,9 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
 
             messageLifecycleService.registerOutgoingMessage(messageId, payload)
-                .shouldBeLeftOfType<ExternalSendFailure> { lifecycleError ->
+                .shouldBeLeftOfType<EdiAdapterFailure> { lifecycleError ->
                     lifecycleError.messageId shouldBe messageId
-                    lifecycleError.reason shouldBe errorMessage
+                    lifecycleError.cause shouldBeEqualUsingFields errorMessage500
                 }
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
         }
@@ -165,7 +165,7 @@ class MessageLifecycleServiceSpec : StringSpec(
 
             val payload = "data".toByteArray()
             messageLifecycleService.registerOutgoingMessage(messageId, payload)
-                .shouldBeLeftOfType<PayloadSigningFailure> { lifecycleError ->
+                .shouldBeLeftOfType<SigningServiceFailure> { lifecycleError ->
                     lifecycleError.messageId shouldBe messageId
                     lifecycleError.reason shouldBe errorMessage
                 }

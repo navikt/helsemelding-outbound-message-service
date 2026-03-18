@@ -8,9 +8,9 @@ import io.ktor.http.ContentType
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.ediadapter.model.PostMessageRequest
-import no.nav.helsemelding.outbound.InfrastructureFailure.ExternalSendFailure
-import no.nav.helsemelding.outbound.InfrastructureFailure.PayloadSigningFailure
 import no.nav.helsemelding.outbound.LifecycleError
+import no.nav.helsemelding.outbound.LifecycleError.EdiAdapterFailure
+import no.nav.helsemelding.outbound.LifecycleError.SigningServiceFailure
 import no.nav.helsemelding.outbound.metrics.ErrorTypeTag
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.model.CreateState
@@ -105,7 +105,7 @@ class MessageLifecycleOrchestratorService(
         payloadResponse.bytes
     }
         .mapLeft { messageSigningError ->
-            PayloadSigningFailure(lifecycleId, messageSigningError.message)
+            SigningServiceFailure(lifecycleId, messageSigningError.message)
         }
         .onLeft { messageSigningError ->
             log.error { "messageId=$lifecycleId Failed signing message: $messageSigningError" }
@@ -130,9 +130,7 @@ class MessageLifecycleOrchestratorService(
         }
         metadata
     }
-        .mapLeft { errorMessage ->
-            ExternalSendFailure(lifecycleId, errorMessage.error ?: "Calling edi adapter failed")
-        }
+        .mapLeft { EdiAdapterFailure(lifecycleId, it) }
         .onLeft { error ->
             log.error { "messageId=$lifecycleId Failed sending message to edi adapter: $error" }
             metrics.registerOutgoingMessageFailed(ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED)

@@ -47,42 +47,45 @@ sealed interface PublishError : StateError {
 }
 
 sealed interface LifecycleError : StateError {
+
+    sealed interface Conflict : LifecycleError
+
     data class ConflictingLifecycleId(
         val messageId: Uuid,
         val existingExternalRefId: Uuid?,
         val existingExternalUrl: URL?,
         val newExternalRefId: Uuid?,
         val newExternalUrl: URL?
-    ) : LifecycleError
+    ) : Conflict
 
     data class ConflictingExternalReferenceId(
         val externalRefId: Uuid,
         val existingMessageId: Uuid,
         val newMessageId: Uuid
-    ) : LifecycleError
+    ) : Conflict
 
     data class ConflictingExternalMessageUrl(
         val externalUrl: URL,
         val existingMessageId: Uuid,
         val newMessageId: Uuid
-    ) : LifecycleError
-}
+    ) : Conflict
 
-sealed interface InfrastructureFailure : LifecycleError {
     data class PersistenceFailure(
         val messageId: Uuid,
         val reason: String
-    ) : InfrastructureFailure
+    ) : LifecycleError
 
-    data class PayloadSigningFailure(
+    sealed interface ExternalFailure : LifecycleError
+
+    data class SigningServiceFailure(
         val messageId: Uuid,
         val reason: String
-    ) : InfrastructureFailure
+    ) : ExternalFailure
 
-    data class ExternalSendFailure(
+    data class EdiAdapterFailure(
         val messageId: Uuid,
-        val reason: String
-    ) : InfrastructureFailure
+        val cause: ErrorMessage
+    ) : ExternalFailure
 }
 
 fun StateError.withMessageContext(message: MessageState): String = "Message ${message.externalRefId}: $this"
