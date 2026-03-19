@@ -80,11 +80,24 @@ interface MessageStateService {
      * or internal monitoring. The returned snapshot includes both the current delivery state
      * and all previously recorded state transitions.
      *
-     * @param messageId The unique identifier of the tracked message.
+     * @param externalRefId The unique external reference identifier of the tracked message.
      * @return A [MessageStateSnapshot] containing the message’s current state and full history
      *         or `null` if no message with the given ID is being tracked.
      */
-    suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot?
+    suspend fun getMessageSnapshotByExternalRefId(externalRefId: Uuid): MessageStateSnapshot?
+
+    /**
+     * Retrieves the current snapshot of a tracked message, including its delivery state and full history.
+     *
+     * Used when inspecting a specific message’s lifecycle — for example, in diagnostics, API queries,
+     * or internal monitoring. The returned snapshot includes both the current delivery state
+     * and all previously recorded state transitions.
+     *
+     * @param id The unique identifier of the tracked message.
+     * @return A [MessageStateSnapshot] containing the message’s current state and full history
+     *         or `null` if no message with the given ID is being tracked.
+     */
+    suspend fun getMessageSnapshotById(id: Uuid): MessageStateSnapshot?
 
     /**
      * Returns messages that are candidates for polling against the external system.
@@ -161,9 +174,15 @@ class TransactionalMessageStateService(
     override suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot =
         transactionRepository.recordStateChange(updateState)
 
-    override suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot? {
-        val state = messageRepository.findOrNull(messageId) ?: return null
-        val history = historyRepository.findAll(messageId)
+    override suspend fun getMessageSnapshotByExternalRefId(externalRefId: Uuid): MessageStateSnapshot? {
+        val state = messageRepository.findByExternalReferenceId(externalRefId) ?: return null
+        val history = historyRepository.findAll(externalRefId)
+        return MessageStateSnapshot(state, history)
+    }
+
+    override suspend fun getMessageSnapshotById(id: Uuid): MessageStateSnapshot? {
+        val state = messageRepository.findById(id) ?: return null
+        val history = historyRepository.findAll(state.externalRefId)
         return MessageStateSnapshot(state, history)
     }
 
@@ -180,16 +199,27 @@ class FakeTransactionalMessageStateService : MessageStateService {
             messageRepository,
             historyRepository
         )
+    private val messageStateById = mutableMapOf<Uuid, Either<LifecycleError, MessageStateSnapshot>>()
+
+    fun givenInitialState(id: Uuid, either: Either<LifecycleError, MessageStateSnapshot>) {
+        messageStateById[id] = either
+    }
 
     override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =
-        transactionRepository.createInitialState(createState)
+        messageStateById[createState.id] ?: transactionRepository.createInitialState(createState)
 
     override suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot =
         transactionRepository.recordStateChange(updateState)
 
-    override suspend fun getMessageSnapshot(messageId: Uuid): MessageStateSnapshot? {
-        val state = messageRepository.findOrNull(messageId) ?: return null
-        val history = historyRepository.findAll(messageId)
+    override suspend fun getMessageSnapshotByExternalRefId(externalRefId: Uuid): MessageStateSnapshot? {
+        val state = messageRepository.findByExternalReferenceId(externalRefId) ?: return null
+        val history = historyRepository.findAll(externalRefId)
+        return MessageStateSnapshot(state, history)
+    }
+
+    override suspend fun getMessageSnapshotById(id: Uuid): MessageStateSnapshot? {
+        val state = messageRepository.findById(id) ?: return null
+        val history = historyRepository.findAll(state.externalRefId)
         return MessageStateSnapshot(state, history)
     }
 
