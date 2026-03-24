@@ -48,6 +48,8 @@ import no.nav.helsemelding.outbound.util.withSpan
 import no.nav.helsemelding.outbound.withMessageContext
 import org.apache.kafka.clients.producer.RecordMetadata
 import kotlin.time.Clock
+import kotlin.time.TimeSource
+import kotlin.time.measureTime
 import kotlin.uuid.Uuid
 
 private val log = KotlinLogging.logger {}
@@ -63,16 +65,17 @@ class PollerService(
 
     suspend fun pollMessages() {
         log.info { "=== Poll cycle start ===" }
-        val cycleStart = System.currentTimeMillis()
 
-        messageStateService
-            .findPollableMessages()
-            .withLogging()
-            .takeIf { it.isNotEmpty() }
-            ?.chunked(pollerConfig.batchSize)
-            ?.forEach { processBatch(it) }
+        val duration = measureTime {
+            messageStateService
+                .findPollableMessages()
+                .withLogging()
+                .takeIf { it.isNotEmpty() }
+                ?.chunked(pollerConfig.batchSize)
+                ?.forEach { processBatch(it) }
+        }
 
-        log.info { "=== Poll cycle end: ${System.currentTimeMillis() - cycleStart}ms ===" }
+        log.info { "=== Poll cycle end: ${duration.inWholeMilliseconds}ms ===" }
     }
 
     private suspend fun processBatch(batch: List<MessageState>) {
@@ -352,11 +355,11 @@ class PollerService(
         }
 
     private inline fun <T> logBatchDuration(summary: String, block: () -> T): T {
-        val start = System.currentTimeMillis()
+        val mark = TimeSource.Monotonic.markNow()
         return try {
             block()
         } finally {
-            log.info { "Batch completed ($summary took ${System.currentTimeMillis() - start}ms)" }
+            log.info { "Batch completed ($summary took ${mark.elapsedNow().inWholeMilliseconds}ms)" }
         }
     }
 }
