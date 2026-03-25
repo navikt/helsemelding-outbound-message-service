@@ -72,7 +72,7 @@ class PollerService(
                 .withLogging()
                 .takeIf { it.isNotEmpty() }
                 ?.chunked(pollerConfig.batchSize)
-                ?.forEach { processBatch(it) }
+                ?.parMap(Dispatchers.IO) { batch -> processBatch(batch) }
         }
 
         log.info { "=== Poll cycle end: ${duration.inWholeMilliseconds}ms ===" }
@@ -83,7 +83,7 @@ class PollerService(
         log.info { "Processing ($summary)" }
 
         logBatchDuration(summary) {
-            batch.parMap(Dispatchers.IO) { pollAndProcessMessage(it) }
+            batch.forEach { pollAndProcessMessage(it) }
 
             val marked = messageStateService.markAsPolled(batch.map { it.externalRefId })
             log.debug { "Marked as polled (count=$marked, $summary)" }
