@@ -292,13 +292,11 @@ class PollerService(
         )
 
         is NextStateDecision.Transition ->
-            if (to == INVALID) {
+            to.takeIf { it == INVALID }?.let {
                 ErrorPayload(
                     code = "INVALID_STATE",
                     details = "Unable to evaluate next state for messageId=$messageId"
                 )
-            } else {
-                null
             }
 
         else -> null
