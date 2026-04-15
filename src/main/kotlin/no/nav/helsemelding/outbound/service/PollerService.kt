@@ -3,7 +3,6 @@ package no.nav.helsemelding.outbound.service
 import arrow.core.Either
 import arrow.core.flatMap
 import arrow.core.left
-import arrow.core.raise.either
 import arrow.core.raise.recover
 import arrow.core.right
 import arrow.fx.coroutines.parMap
@@ -12,7 +11,6 @@ import io.opentelemetry.api.GlobalOpenTelemetry
 import kotlinx.coroutines.Dispatchers
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.ApprecInfo
-import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.StatusInfo
 import no.nav.helsemelding.outbound.EdiAdapterError.FetchFailure
 import no.nav.helsemelding.outbound.EdiAdapterError.NoApprecReturned
@@ -20,10 +18,13 @@ import no.nav.helsemelding.outbound.PublishError
 import no.nav.helsemelding.outbound.StateError
 import no.nav.helsemelding.outbound.StateTransitionError
 import no.nav.helsemelding.outbound.config
+import no.nav.helsemelding.outbound.model.AppRecErrorMessage
+import no.nav.helsemelding.outbound.model.AppRecPayload
 import no.nav.helsemelding.outbound.model.AppRecStatus
-import no.nav.helsemelding.outbound.model.ApprecStatusMessage
 import no.nav.helsemelding.outbound.model.DeliveryEvaluationState
+import no.nav.helsemelding.outbound.model.ErrorPayload
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
+import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.outbound.model.MessageDeliveryState.INVALID
@@ -31,13 +32,13 @@ import no.nav.helsemelding.outbound.model.MessageDeliveryState.NEW
 import no.nav.helsemelding.outbound.model.MessageDeliveryState.PENDING
 import no.nav.helsemelding.outbound.model.MessageDeliveryState.REJECTED
 import no.nav.helsemelding.outbound.model.MessageState
+import no.nav.helsemelding.outbound.model.MessageStatus
+import no.nav.helsemelding.outbound.model.MessageStatusEvent
 import no.nav.helsemelding.outbound.model.NextStateDecision
 import no.nav.helsemelding.outbound.model.NextStateDecision.Rejected
-import no.nav.helsemelding.outbound.model.TransportStatusMessage
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.model.formatExternal
 import no.nav.helsemelding.outbound.model.formatInvalidState
-import no.nav.helsemelding.outbound.model.formatNew
 import no.nav.helsemelding.outbound.model.formatTransition
 import no.nav.helsemelding.outbound.model.formatUnchanged
 import no.nav.helsemelding.outbound.model.logPrefix
@@ -90,8 +91,8 @@ class PollerService(
         }
     }
 
-    internal suspend fun pollAndProcessMessage(message: MessageState): Either<ErrorMessage, List<StatusInfo>> {
-        return tracer.withSpan("Poll and process message") {
+    internal suspend fun pollAndProcessMessage(message: MessageState) {
+        tracer.withSpan("Poll and process message") {
             log.debug { "${message.logPrefix()} Fetching status from EDI Adapter" }
 
             ediAdapterClient.getMessageStatus(message.externalRefId)
@@ -99,7 +100,9 @@ class PollerService(
                     log.debug { "${message.logPrefix()} Received ${statuses.size} statuses" }
                     processMessage(statuses, message)
                 }
-                .onLeft { error -> log.error { "${message.logPrefix()} Error fetching status: $error" } }
+                .onLeft { error ->
+                    log.error { "${message.logPrefix()} Error fetching status: $error" }
+                }
         }
     }
 
@@ -129,28 +132,64 @@ class PollerService(
         decision: NextStateDecision
     ) {
         when (decision) {
-            NextStateDecision.Unchanged -> onUnchanged(message)
-            is NextStateDecision.Transition -> onTransition(message, external, decision)
-            is NextStateDecision.Pending -> onPending(message, external, decision)
-            Rejected.AppRec -> onRejectedAppRec(message, external)
-            Rejected.Transport -> onRejectedTransport(message, external)
+            NextStateDecision.Unchanged -> {
+                log.debug { message.formatUnchanged() }
+            }
+
+            else -> {
+                logTransition(message, decision)
+                recordStateChange(message, external)
+
+                val apprecInfo =
+                    if (decision.requiresApprecInfo()) {
+                        fetchApprecInfoOrNull(message)
+                    } else {
+                        null
+                    }
+
+                publishStatusMessage(message, external, decision, apprecInfo)
+                    .onLeft { error ->
+                        when (error) {
+                            is PublishError.Failure ->
+                                log.error(error.cause) { error.withMessageContext(message) }
+                        }
+                    }
+            }
         }
     }
 
-    private fun onUnchanged(message: MessageState) = log.debug { message.formatUnchanged() }
-
-    private suspend fun onTransition(
+    private fun logTransition(
         message: MessageState,
-        external: ExternalStatus,
-        decision: NextStateDecision.Transition
+        decision: NextStateDecision
     ) {
-        when (decision.to) {
-            NEW -> log.debug { message.formatNew() }
-            COMPLETED -> completed(message, external.deliveryState, external.appRecStatus)
-            INVALID -> log.error { message.formatInvalidState() }
-            PENDING -> error("Use NextStateDecision.Pending")
-            REJECTED -> error("Use NextStateDecision.Rejected")
+        when (decision) {
+            Rejected.AppRec,
+            Rejected.Transport -> log.warn { message.formatTransition(decision) }
+
+            is NextStateDecision.Transition -> when (decision.to) {
+                INVALID -> log.error { message.formatInvalidState() }
+                else -> log.info { message.formatTransition(decision) }
+            }
+
+            is NextStateDecision.Pending -> log.info { message.formatTransition(decision) }
+            NextStateDecision.Unchanged -> Unit
         }
+    }
+
+    private suspend fun recordStateChange(
+        message: MessageState,
+        external: ExternalStatus
+    ) {
+        messageStateService.recordStateChange(
+            UpdateState(
+                externalRefId = message.externalRefId,
+                messageType = message.messageType,
+                oldDeliveryState = message.externalDeliveryState,
+                newDeliveryState = external.deliveryState,
+                oldAppRecStatus = message.appRecStatus,
+                newAppRecStatus = external.appRecStatus
+            )
+        )
     }
 
     private fun determineNextState(
@@ -170,94 +209,71 @@ class PollerService(
             }
         }
 
-    private suspend fun onPending(
+    private suspend fun publishStatusMessage(
         message: MessageState,
         external: ExternalStatus,
-        decision: NextStateDecision.Pending
-    ) {
-        log.info { message.formatTransition(decision) }
-        pending(message, external.deliveryState, external.appRecStatus)
-    }
+        decision: NextStateDecision,
+        apprecInfo: ApprecInfo?
+    ): Either<PublishError, RecordMetadata> =
+        statusMessagePublisher.publish(
+            message.id,
+            statusMessage(message, external, decision, apprecInfo).toJson()
+        ).withLogging(message.id)
 
-    private suspend fun onRejectedAppRec(message: MessageState, external: ExternalStatus) {
-        log.warn { message.formatTransition(Rejected.AppRec) }
-        rejected(message, external.deliveryState, external.appRecStatus)
-        publishApprecStatus(message)
-    }
-
-    private suspend fun onRejectedTransport(message: MessageState, external: ExternalStatus) {
-        log.warn { message.formatTransition(Rejected.Transport) }
-        rejected(message, external.deliveryState, external.appRecStatus)
-        publishTransportStatus(message.id, external.deliveryState)
-    }
-
-    private suspend fun pending(
+    private fun statusMessage(
         message: MessageState,
-        newState: ExternalDeliveryState,
-        newAppRecStatus: AppRecStatus?
-    ) {
-        messageStateService.recordStateChange(
-            UpdateState(
-                message.externalRefId,
-                message.messageType,
-                message.externalDeliveryState,
-                newState,
-                message.appRecStatus,
-                newAppRecStatus
-            )
-        )
-    }
-
-    private suspend fun completed(
-        message: MessageState,
-        newState: ExternalDeliveryState,
-        newAppRecStatus: AppRecStatus?
-    ) {
-        log.info { message.formatTransition(COMPLETED) }
-        messageStateService.recordStateChange(
-            UpdateState(
-                message.externalRefId,
-                message.messageType,
-                message.externalDeliveryState,
-                newState,
-                message.appRecStatus,
-                newAppRecStatus
-            )
+        external: ExternalStatus,
+        decision: NextStateDecision,
+        apprecInfo: ApprecInfo?
+    ): MessageStatusEvent =
+        MessageStatusEvent(
+            messageId = message.id,
+            timestamp = Clock.System.now(),
+            status = decision.toMessageStatus(external),
+            apprec = apprecInfo?.toPayload(),
+            error = decision.toErrorPayload(message.id)
         )
 
-        publishApprecStatus(message)
-    }
+    private fun NextStateDecision.toMessageStatus(
+        external: ExternalStatus
+    ): MessageStatus = when (this) {
+        NextStateDecision.Unchanged ->
+            error("No status message should be published for Unchanged")
 
-    private suspend fun rejected(
-        message: MessageState,
-        externalDeliveryState: ExternalDeliveryState,
-        newAppRecStatus: AppRecStatus?
-    ) {
-        messageStateService.recordStateChange(
-            UpdateState(
-                message.externalRefId,
-                message.messageType,
-                message.externalDeliveryState,
-                externalDeliveryState,
-                message.appRecStatus,
-                newAppRecStatus
-            )
-        )
-    }
+        is NextStateDecision.Pending ->
+            external.toPendingStatus()
 
-    private suspend fun publishApprecStatus(message: MessageState): Either<StateError, RecordMetadata> =
-        either {
-            val apprecInfo = fetchApprecInfo(message).bind()
-            publishApprecStatus(message.id, apprecInfo).bind()
+        is NextStateDecision.Transition -> when (to) {
+            NEW -> MessageStatus.NEW
+            COMPLETED -> MessageStatus.COMPLETED
+            INVALID -> MessageStatus.INVALID
+            PENDING -> external.toPendingStatus()
+            REJECTED -> error("Use Rejected decision variants")
         }
-            .onLeft { error ->
-                when (error) {
-                    is PublishError.Failure ->
-                        log.error(error.cause) { error.withMessageContext(message) }
 
-                    else -> log.error { error.withMessageContext(message) }
-                }
+        Rejected.AppRec -> MessageStatus.REJECTED_APPREC
+        Rejected.Transport -> MessageStatus.REJECTED_TRANSPORT
+    }
+
+    private fun ExternalStatus.toPendingStatus(): MessageStatus =
+        if (deliveryState == ACKNOWLEDGED) {
+            MessageStatus.PENDING_APPREC
+        } else {
+            MessageStatus.PENDING_TRANSPORT
+        }
+
+    private fun NextStateDecision.requiresApprecInfo(): Boolean = when (this) {
+        is NextStateDecision.Transition -> to == COMPLETED
+        Rejected.AppRec -> true
+        else -> false
+    }
+
+    private suspend fun fetchApprecInfoOrNull(message: MessageState): ApprecInfo? =
+        fetchApprecInfo(message)
+            .onLeft { error ->
+                log.warn { error.withMessageContext(message) }
             }
+            .getOrNull()
 
     private suspend fun fetchApprecInfo(
         message: MessageState
@@ -270,56 +286,36 @@ class PollerService(
                     ?: NoApprecReturned(message.externalRefId).left()
             }
 
-    private suspend fun publishApprecStatus(
-        messageId: Uuid,
-        apprecInfo: ApprecInfo
-    ): Either<PublishError, RecordMetadata> =
-        statusMessagePublisher.publish(
-            messageId,
-            apprecStatusMessage(
-                messageId,
-                apprecInfo
-            )
-                .toJson()
-        )
-            .withLogging(messageId)
-
-    private suspend fun publishTransportStatus(
-        messageId: Uuid,
-        deliveryState: ExternalDeliveryState
-    ): Either<PublishError, RecordMetadata> =
-        statusMessagePublisher.publish(
-            messageId,
-            transportStatusMessage(
-                messageId,
-                deliveryState
-            )
-                .toJson()
-        )
-            .withLogging(messageId)
-
-    private fun transportStatusMessage(
-        messageId: Uuid,
-        deliveryState: ExternalDeliveryState
-    ): TransportStatusMessage =
-        TransportStatusMessage(
-            messageId = messageId,
-            timestamp = Clock.System.now(),
-            error = TransportStatusMessage.TransportError(
-                code = deliveryState.name,
-                details = "Transport failed for messageId=$messageId:  ${deliveryState.name}"
-            )
+    private fun ApprecInfo.toPayload(): AppRecPayload =
+        AppRecPayload(
+            receiverHerId = receiverHerId,
+            appRecStatus = appRecStatus?.name,
+            appRecErrorList = appRecErrorList.orEmpty().map {
+                AppRecErrorMessage(
+                    code = it.errorCode,
+                    text = it.description
+                )
+            }
         )
 
-    private fun apprecStatusMessage(
-        messageId: Uuid,
-        apprecInfo: ApprecInfo
-    ): ApprecStatusMessage =
-        ApprecStatusMessage(
-            messageId = messageId,
-            timestamp = Clock.System.now(),
-            apprec = apprecInfo
+    private fun NextStateDecision.toErrorPayload(messageId: Uuid): ErrorPayload? = when (this) {
+        Rejected.Transport -> ErrorPayload(
+            code = "REJECTED_TRANSPORT",
+            details = "Transport failed for messageId=$messageId"
         )
+
+        is NextStateDecision.Transition ->
+            if (to == INVALID) {
+                ErrorPayload(
+                    code = "INVALID_STATE",
+                    details = "Unable to evaluate next state for messageId=$messageId"
+                )
+            } else {
+                null
+            }
+
+        else -> null
+    }
 
     private fun NextStateDecision.withLogging(
         message: MessageState,

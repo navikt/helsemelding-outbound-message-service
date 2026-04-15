@@ -3,6 +3,7 @@ package no.nav.helsemelding.outbound.poller
 import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import kotlinx.serialization.json.Json
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.AppRecStatus.OK
@@ -14,11 +15,14 @@ import no.nav.helsemelding.outbound.evaluator.AppRecTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.StateTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.TransportStatusTranslator
 import no.nav.helsemelding.outbound.evaluator.TransportTransitionEvaluator
-import no.nav.helsemelding.outbound.model.ApprecStatusMessage
+import no.nav.helsemelding.outbound.model.AppRecStatus.REJECTED
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
+import no.nav.helsemelding.outbound.model.MessageStatus
+import no.nav.helsemelding.outbound.model.MessageStatus.PENDING_APPREC
+import no.nav.helsemelding.outbound.model.MessageStatus.PENDING_TRANSPORT
+import no.nav.helsemelding.outbound.model.MessageStatusEvent
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
-import no.nav.helsemelding.outbound.model.TransportStatusMessage
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.publisher.FakeStatusMessagePublisher
 import no.nav.helsemelding.outbound.publisher.MessagePublisher
@@ -40,44 +44,46 @@ class PollerServiceSpec : StringSpec(
             val id2 = Uuid.random()
             val externalRefId1 = Uuid.random()
             val externalRefId2 = Uuid.random()
-            val url = URI("http://example.com/1").toURL()
+            val url1 = URI("http://example.com/1").toURL()
+            val url2 = URI("http://example.com/2").toURL()
 
             messageStateService.createInitialState(
                 CreateState(
                     id1,
                     externalRefId1,
                     DIALOG,
-                    url
+                    url1
                 )
-            )
+            ).shouldBeRight()
 
             messageStateService.createInitialState(
                 CreateState(
                     id2,
                     externalRefId2,
                     DIALOG,
-                    url
+                    url2
                 )
-            )
+            ).shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId1, DeliveryState.ACKNOWLEDGED, null)
             ediAdapterClient.givenStatus(externalRefId2, DeliveryState.ACKNOWLEDGED, null)
 
             pollerService.pollMessages()
+            val publishedAfterFirstRun = statusMessagePublisher.published.size
+
             pollerService.pollMessages()
 
-            statusMessagePublisher.published shouldBe emptyList()
+            statusMessagePublisher.published.size shouldBe publishedAfterFirstRun
             messageStateService.findPollableMessages() shouldBe emptyList()
         }
 
         "No pollable messages → do nothing" {
-            val (_, messageStateService, dialogMessagePublisher, pollerService) = fixture()
+            val (_, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             pollerService.pollMessages()
 
             messageStateService.findPollableMessages() shouldBe emptyList()
-
-            dialogMessagePublisher.published shouldBe emptyList()
+            statusMessagePublisher.published shouldBe emptyList()
         }
 
         "No status list → no state change and no publish" {
@@ -94,8 +100,7 @@ class PollerServiceSpec : StringSpec(
                     DIALOG,
                     externalUrl
                 )
-            )
-                .shouldBeRight()
+            ).shouldBeRight()
 
             ediAdapterClient.givenStatusList(externalRefId, emptyList())
 
@@ -114,134 +119,242 @@ class PollerServiceSpec : StringSpec(
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
-            val messageSnapshot = messageStateService.createInitialState(
+            messageStateService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
                     DIALOG,
                     externalUrl
                 )
+            ).shouldBeRight()
+
+            val updatedSnapshot = messageStateService.recordStateChange(
+                UpdateState(
+                    externalRefId = externalRefId,
+                    messageType = DIALOG,
+                    oldDeliveryState = null,
+                    newDeliveryState = ACKNOWLEDGED,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null,
+                    occurredAt = Clock.System.now()
+                )
             )
-                .shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, null)
 
-            pollerService.pollAndProcessMessage(messageSnapshot.messageState)
+            pollerService.pollAndProcessMessage(updatedSnapshot.messageState)
 
-            val currentMessageSnapshot = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
-            currentMessageSnapshot.messageState.externalDeliveryState shouldBe ACKNOWLEDGED
-            currentMessageSnapshot.messageState.appRecStatus shouldBe null
-
+            val current = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
+            current.messageState.externalDeliveryState shouldBe ACKNOWLEDGED
+            current.messageState.appRecStatus shouldBe null
             statusMessagePublisher.published shouldBe emptyList()
         }
 
-        "PENDING → COMPLETED publish update" {
+        "NEW → PENDING_TRANSPORT publishes status" {
             val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
-            val messageSnapshot = messageStateService.createInitialState(
+            val snapshot = messageStateService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
                     DIALOG,
                     externalUrl
                 )
-            )
-                .shouldBeRight()
+            ).shouldBeRight()
+
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.UNCONFIRMED, null)
+
+            pollerService.pollAndProcessMessage(snapshot.messageState)
+
+            statusMessagePublisher.published.size shouldBe 1
+
+            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            event.messageId shouldBe id
+            event.status shouldBe PENDING_TRANSPORT
+            event.apprec shouldBe null
+            event.error shouldBe null
+        }
+
+        "NEW → PENDING_APPREC publishes status" {
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
+
+            val id = Uuid.random()
+            val externalRefId = Uuid.random()
+            val externalUrl = URI("http://example.com/1").toURL()
+
+            val snapshot = messageStateService.createInitialState(
+                CreateState(
+                    id,
+                    externalRefId,
+                    DIALOG,
+                    externalUrl
+                )
+            ).shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, null)
 
-            val messageState = messageSnapshot.messageState
-            pollerService.pollAndProcessMessage(messageState)
+            pollerService.pollAndProcessMessage(snapshot.messageState)
 
-            val updatedMessageSnapshot = messageStateService.recordStateChange(
-                UpdateState(
+            statusMessagePublisher.published.size shouldBe 1
+
+            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            event.messageId shouldBe id
+            event.status shouldBe PENDING_APPREC
+            event.apprec shouldBe null
+            event.error shouldBe null
+        }
+
+        "PENDING_APPREC → COMPLETED publishes completed status with apprec payload" {
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
+
+            val id = Uuid.random()
+            val externalRefId = Uuid.random()
+            val externalUrl = URI("http://example.com/1").toURL()
+
+            messageStateService.createInitialState(
+                CreateState(
+                    id,
                     externalRefId,
                     DIALOG,
-                    ACKNOWLEDGED,
-                    ACKNOWLEDGED,
-                    null,
-                    null,
-                    Clock.System.now()
+                    externalUrl
+                )
+            ).shouldBeRight()
+
+            val pendingSnapshot = messageStateService.recordStateChange(
+                UpdateState(
+                    externalRefId = externalRefId,
+                    messageType = DIALOG,
+                    oldDeliveryState = null,
+                    newDeliveryState = ACKNOWLEDGED,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null,
+                    occurredAt = Clock.System.now()
                 )
             )
 
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
             ediAdapterClient.givenApprecInfoSingle(externalRefId, ApprecInfo(1, OK))
 
-            val updatedMessageState = updatedMessageSnapshot.messageState
-            pollerService.pollAndProcessMessage(updatedMessageState)
+            pollerService.pollAndProcessMessage(pendingSnapshot.messageState)
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val bytes = statusMessagePublisher.published.single()
-            val apprectStatus = Json.decodeFromString<ApprecStatusMessage>(String(bytes))
-
-            apprectStatus.messageId shouldBe id
-            apprectStatus.apprec.appRecStatus shouldBe OK
+            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            event.messageId shouldBe id
+            event.status shouldBe MessageStatus.COMPLETED
+            event.error shouldBe null
+            event.apprec shouldNotBe null
+            event.apprec!!.receiverHerId shouldBe 1
+            event.apprec.appRecStatus shouldBe OK.toString()
+            event.apprec.appRecErrorList shouldBe emptyList()
         }
 
-        "External REJECTED → publish rejection" {
+        "External REJECTED publishes rejected transport status" {
             val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
-            val messageSnapshot = messageStateService.createInitialState(
+            val snapshot = messageStateService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
                     DIALOG,
                     externalUrl
                 )
-            )
-                .shouldBeRight()
+            ).shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId, DeliveryState.REJECTED, null)
 
-            pollerService.pollAndProcessMessage(messageSnapshot.messageState)
+            pollerService.pollAndProcessMessage(snapshot.messageState)
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val bytes = statusMessagePublisher.published.single()
-            val transportStatus = Json.decodeFromString<TransportStatusMessage>(String(bytes))
-
-            transportStatus.messageId shouldBe id
-            transportStatus.error.code shouldBe "REJECTED"
+            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            event.messageId shouldBe id
+            event.status shouldBe MessageStatus.REJECTED_TRANSPORT
+            event.apprec shouldBe null
+            event.error shouldNotBe null
+            event.error!!.code shouldBe "REJECTED_TRANSPORT"
         }
 
-        "Unresolvable external state → INVALID but not published" {
+        "Apprec REJECTED publishes rejected apprec status with apprec payload" {
             val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
             val externalUrl = URI("http://example.com/1").toURL()
 
-            val messageSnapshot = messageStateService.createInitialState(
+            messageStateService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
                     DIALOG,
                     externalUrl
                 )
+            ).shouldBeRight()
+
+            val pendingSnapshot = messageStateService.recordStateChange(
+                UpdateState(
+                    externalRefId = externalRefId,
+                    messageType = DIALOG,
+                    oldDeliveryState = null,
+                    newDeliveryState = ACKNOWLEDGED,
+                    oldAppRecStatus = null,
+                    newAppRecStatus = null,
+                    occurredAt = Clock.System.now()
+                )
             )
-                .shouldBeRight()
+
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, ExternalAppRecStatus.REJECTED)
+            ediAdapterClient.givenApprecInfoSingle(externalRefId, ApprecInfo(1, ExternalAppRecStatus.REJECTED))
+
+            pollerService.pollAndProcessMessage(pendingSnapshot.messageState)
+
+            statusMessagePublisher.published.size shouldBe 1
+
+            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            event.messageId shouldBe id
+            event.status shouldBe MessageStatus.REJECTED_APPREC
+            event.error shouldBe null
+            event.apprec shouldNotBe null
+            event.apprec!!.receiverHerId shouldBe 1
+            event.apprec.appRecStatus shouldBe REJECTED.toString()
+        }
+
+        "Unresolvable external state → INVALID publishes invalid status" {
+            val (ediAdapterClient, messageStateService, statusMessagePublisher, pollerService) = fixture()
+
+            val id = Uuid.random()
+            val externalRefId = Uuid.random()
+            val externalUrl = URI("http://example.com/1").toURL()
+
+            val snapshot = messageStateService.createInitialState(
+                CreateState(
+                    id,
+                    externalRefId,
+                    DIALOG,
+                    externalUrl
+                )
+            ).shouldBeRight()
 
             ediAdapterClient.givenStatus(externalRefId, UNCONFIRMED, ExternalAppRecStatus.REJECTED)
 
-            val messageState = messageSnapshot.messageState
+            pollerService.pollAndProcessMessage(snapshot.messageState)
 
-            pollerService.pollAndProcessMessage(messageState)
+            statusMessagePublisher.published.size shouldBe 1
 
-            val currentMessageSnapshot = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
-            currentMessageSnapshot.messageState.externalDeliveryState shouldBe null
-            currentMessageSnapshot.messageState.appRecStatus shouldBe null
-
-            statusMessagePublisher.published shouldBe emptyList()
+            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            event.messageId shouldBe id
+            event.status shouldBe MessageStatus.INVALID
+            event.apprec shouldBe null
+            event.error shouldNotBe null
+            event.error!!.code shouldBe "INVALID_STATE"
         }
     }
 )
@@ -249,23 +362,23 @@ class PollerServiceSpec : StringSpec(
 private data class Fixture(
     val ediAdapterClient: FakeEdiAdapterClient,
     val messageStateService: FakeTransactionalMessageStateService,
-    val dialogMessagePublisher: FakeStatusMessagePublisher,
+    val statusMessagePublisher: FakeStatusMessagePublisher,
     val pollerService: PollerService
 )
 
 private fun fixture(): Fixture {
     val ediAdapterClient = FakeEdiAdapterClient()
     val messageStateService = FakeTransactionalMessageStateService()
-    val dialogMessagePublisher = FakeStatusMessagePublisher()
+    val statusMessagePublisher = FakeStatusMessagePublisher()
 
     return Fixture(
-        ediAdapterClient,
-        messageStateService,
-        dialogMessagePublisher,
-        pollerService(
+        ediAdapterClient = ediAdapterClient,
+        messageStateService = messageStateService,
+        statusMessagePublisher = statusMessagePublisher,
+        pollerService = pollerService(
             ediAdapterClient,
             messageStateService,
-            dialogMessagePublisher
+            statusMessagePublisher
         )
     )
 }
@@ -288,3 +401,5 @@ private fun stateEvaluatorService(): StateEvaluatorService = StateEvaluatorServi
         AppRecTransitionEvaluator()
     )
 )
+
+private fun decodeStatusEvent(bytes: ByteArray): MessageStatusEvent = Json.decodeFromString(String(bytes))
