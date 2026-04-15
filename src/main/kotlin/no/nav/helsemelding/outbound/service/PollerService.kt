@@ -24,7 +24,6 @@ import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.DeliveryEvaluationState
 import no.nav.helsemelding.outbound.model.ErrorPayload
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
-import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.ExternalStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState.COMPLETED
 import no.nav.helsemelding.outbound.model.MessageDeliveryState.INVALID
@@ -147,7 +146,7 @@ class PollerService(
                         null
                     }
 
-                publishStatusMessage(message, external, decision, apprecInfo)
+                publishStatusMessage(message, decision, apprecInfo)
                     .onLeft { error ->
                         when (error) {
                             is PublishError.Failure ->
@@ -211,56 +210,44 @@ class PollerService(
 
     private suspend fun publishStatusMessage(
         message: MessageState,
-        external: ExternalStatus,
         decision: NextStateDecision,
         apprecInfo: ApprecInfo?
     ): Either<PublishError, RecordMetadata> =
         statusMessagePublisher.publish(
             message.id,
-            statusMessage(message, external, decision, apprecInfo).toJson()
+            statusMessage(message, decision, apprecInfo).toJson()
         ).withLogging(message.id)
 
     private fun statusMessage(
         message: MessageState,
-        external: ExternalStatus,
         decision: NextStateDecision,
         apprecInfo: ApprecInfo?
     ): MessageStatusEvent =
         MessageStatusEvent(
             messageId = message.id,
             timestamp = Clock.System.now(),
-            status = decision.toMessageStatus(external),
+            status = decision.toMessageStatus(),
             apprec = apprecInfo?.toPayload(),
             error = decision.toErrorPayload(message.id)
         )
 
-    private fun NextStateDecision.toMessageStatus(
-        external: ExternalStatus
-    ): MessageStatus = when (this) {
-        NextStateDecision.Unchanged ->
-            error("No status message should be published for Unchanged")
-
-        is NextStateDecision.Pending ->
-            external.toPendingStatus()
+    private fun NextStateDecision.toMessageStatus(): MessageStatus = when (this) {
+        NextStateDecision.Unchanged -> error("No status message should be published for Unchanged")
 
         is NextStateDecision.Transition -> when (to) {
             NEW -> MessageStatus.NEW
             COMPLETED -> MessageStatus.COMPLETED
             INVALID -> MessageStatus.INVALID
-            PENDING -> external.toPendingStatus()
-            REJECTED -> error("Use Rejected decision variants")
+            PENDING -> error("Use explicit Pending variants")
+            REJECTED -> error("Use explicit Rejected variants")
         }
 
-        Rejected.AppRec -> MessageStatus.REJECTED_APPREC
+        NextStateDecision.Pending.Transport -> MessageStatus.PENDING_TRANSPORT
+        NextStateDecision.Pending.AppRec -> MessageStatus.PENDING_APPREC
+
         Rejected.Transport -> MessageStatus.REJECTED_TRANSPORT
+        Rejected.AppRec -> MessageStatus.REJECTED_APPREC
     }
-
-    private fun ExternalStatus.toPendingStatus(): MessageStatus =
-        if (deliveryState == ACKNOWLEDGED) {
-            MessageStatus.PENDING_APPREC
-        } else {
-            MessageStatus.PENDING_TRANSPORT
-        }
 
     private fun NextStateDecision.requiresApprecInfo(): Boolean = when (this) {
         is NextStateDecision.Transition -> to == COMPLETED
