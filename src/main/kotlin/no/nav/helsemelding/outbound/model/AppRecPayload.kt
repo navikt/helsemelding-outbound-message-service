@@ -5,6 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class AppRecPayload(
     val receiverHerId: Int? = null,
-    val appRecStatus: String? = null,
-    val appRecErrorList: List<AppRecErrorMessage> = emptyList()
+    val status: String? = null,
+    val errorList: List<AppRecErrorMessage> = emptyList()
 )

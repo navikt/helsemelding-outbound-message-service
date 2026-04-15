@@ -249,8 +249,8 @@ class PollerServiceSpec : StringSpec(
             event.error shouldBe null
             event.apprec shouldNotBe null
             event.apprec!!.receiverHerId shouldBe 1
-            event.apprec.appRecStatus shouldBe OK.toString()
-            event.apprec.appRecErrorList shouldBe emptyList()
+            event.apprec.status shouldBe OK.toString()
+            event.apprec.errorList shouldBe emptyList()
         }
 
         "External REJECTED publishes rejected transport status" {
@@ -324,7 +324,7 @@ class PollerServiceSpec : StringSpec(
             event.error shouldBe null
             event.apprec shouldNotBe null
             event.apprec!!.receiverHerId shouldBe 1
-            event.apprec.appRecStatus shouldBe REJECTED.toString()
+            event.apprec.status shouldBe REJECTED.toString()
         }
 
         "Unresolvable external state → INVALID publishes invalid status" {

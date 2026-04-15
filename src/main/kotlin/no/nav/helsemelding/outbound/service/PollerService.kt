@@ -130,30 +130,36 @@ class PollerService(
         external: ExternalStatus,
         decision: NextStateDecision
     ) {
-        when (decision) {
-            NextStateDecision.Unchanged -> {
-                log.debug { message.formatUnchanged() }
-            }
+        if (decision != NextStateDecision.Unchanged) {
+            handleStateChange(message, external, decision)
 
-            else -> {
-                logTransition(message, decision)
-                recordStateChange(message, external)
+            val apprecInfo = getApprecInfo(message, decision)
 
-                val apprecInfo =
-                    if (decision.requiresApprecInfo()) {
-                        fetchApprecInfoOrNull(message)
-                    } else {
-                        null
-                    }
+            publishStatusMessageEvent(message, decision, apprecInfo)
+                .onLeft { error -> logPublishError(message, error) }
+        } else {
+            log.debug { message.formatUnchanged() }
+        }
+    }
 
-                publishStatusMessage(message, decision, apprecInfo)
-                    .onLeft { error ->
-                        when (error) {
-                            is PublishError.Failure ->
-                                log.error(error.cause) { error.withMessageContext(message) }
-                        }
-                    }
-            }
+    private suspend fun handleStateChange(
+        message: MessageState,
+        external: ExternalStatus,
+        decision: NextStateDecision
+    ) {
+        logTransition(message, decision)
+        recordStateChange(message, external)
+    }
+
+    private suspend fun getApprecInfo(
+        message: MessageState,
+        decision: NextStateDecision
+    ): ApprecInfo? = if (decision.requiresApprecInfo()) fetchApprecInfoOrNull(message) else null
+
+    private fun logPublishError(message: MessageState, error: PublishError) {
+        when (error) {
+            is PublishError.Failure ->
+                log.error(error.cause) { error.withMessageContext(message) }
         }
     }
 
@@ -208,17 +214,17 @@ class PollerService(
             }
         }
 
-    private suspend fun publishStatusMessage(
+    private suspend fun publishStatusMessageEvent(
         message: MessageState,
         decision: NextStateDecision,
         apprecInfo: ApprecInfo?
     ): Either<PublishError, RecordMetadata> =
         statusMessagePublisher.publish(
             message.id,
-            statusMessage(message, decision, apprecInfo).toJson()
+            statusMessageEvent(message, decision, apprecInfo).toJson()
         ).withLogging(message.id)
 
-    private fun statusMessage(
+    private fun statusMessageEvent(
         message: MessageState,
         decision: NextStateDecision,
         apprecInfo: ApprecInfo?
@@ -276,8 +282,8 @@ class PollerService(
     private fun ApprecInfo.toPayload(): AppRecPayload =
         AppRecPayload(
             receiverHerId = receiverHerId,
-            appRecStatus = appRecStatus?.name,
-            appRecErrorList = appRecErrorList.orEmpty().map {
+            status = appRecStatus?.name,
+            errorList = appRecErrorList.orEmpty().map {
                 AppRecErrorMessage(
                     code = it.errorCode,
                     text = it.description
