@@ -67,7 +67,7 @@ metadata:
 spec:
   pool: nav-dev
   config:
-    cleanupPolicy: delete
+    cleanupPolicy: compact
     maxMessageBytes: 1048588
     minimumInSyncReplicas: 2
     partitions: 1

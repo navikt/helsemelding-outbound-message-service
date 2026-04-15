@@ -73,7 +73,8 @@ class FakeStatusMessagePublisher(
                 .left()
         }
 
-        published += message.toByteArray()
+        val bytes = message.toByteArray()
+        published += bytes
 
         val md = RecordMetadata(
             TopicPartition(topic, 0),
@@ -81,7 +82,7 @@ class FakeStatusMessagePublisher(
             0,
             System.currentTimeMillis(),
             referenceId.toByteArray().size,
-            published.single().size
+            bytes.size
         )
 
         return md.right()
