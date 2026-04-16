@@ -286,7 +286,8 @@ class PollerService(
             errorList = appRecErrorList.orEmpty().map {
                 AppRecErrorMessage(
                     code = it.errorCode,
-                    text = it.description
+                    description = it.description,
+                    oid = it.oid
                 )
             }
         )
