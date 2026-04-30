@@ -6,21 +6,27 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 import no.nav.helsemelding.outbound.handler.MessageHandler
 import no.nav.helsemelding.outbound.model.DialogMessage
+import no.nav.helsemelding.outbound.model.MessageRecord
 import kotlin.uuid.Uuid
 
 class MessageReceiver(
     private val dialogMessageOutTopic: String,
     private val kafkaReceiver: KafkaReceiver<String, ByteArray>,
-    private val errorHandler: MessageHandler
+    private val messageHandler: MessageHandler
 ) {
     fun receiveMessages(): Flow<DialogMessage> =
         kafkaReceiver
             .receive(dialogMessageOutTopic)
             .mapNotNull { record ->
                 when (val validation = validateRecordKey(record)) {
-                    RecordKeyValidation.Valid -> toMessage(record)
+                    RecordKeyValidation.Valid ->
+                        toMessage(record)
+
                     is RecordKeyValidation.Invalid -> {
-                        errorHandler.handleInvalidKafkaKey(record, validation)
+                        messageHandler.handleInvalidKafkaKey(
+                            record = record.toMessageRecord(),
+                            validation = validation
+                        )
                         null
                     }
                 }
@@ -30,6 +36,13 @@ class MessageReceiver(
         DialogMessage(
             Uuid.parse(record.key()),
             record.value()
+        )
+
+    private fun ReceiverRecord<String, ByteArray>.toMessageRecord(): MessageRecord =
+        MessageRecord(
+            key = key(),
+            payload = value(),
+            offset = offset.offset
         )
 }
 

@@ -68,7 +68,7 @@ private class GenericMessagePublisher<T>(
 
 class FakeStatusMessagePublisher(
     private val topic: String = config().kafka.topics.statusMessage
-) : MessagePublisher<MessageStatusEvent> {
+) : StatusMessagePublisher {
 
     val published = mutableListOf<MessageStatusEvent>()
     var failNext = false
@@ -100,5 +100,26 @@ class FakeStatusMessagePublisher(
         )
 
         return md.right()
+    }
+}
+
+class FakeErrorMessagePublisher : ErrorMessagePublisher {
+    val published = mutableListOf<Pair<Uuid, MessageErrorEvent>>()
+
+    override suspend fun publish(
+        referenceId: Uuid,
+        message: MessageErrorEvent
+    ): Either<PublishError, RecordMetadata> {
+        published += referenceId to message
+
+        return RecordMetadata(
+            TopicPartition("helsemelding.dialog.out.error", 0),
+            0L,
+            0,
+            System.currentTimeMillis(),
+            referenceId.toByteArray().size,
+            message.toJson().encodeToByteArray().size
+        )
+            .right()
     }
 }
