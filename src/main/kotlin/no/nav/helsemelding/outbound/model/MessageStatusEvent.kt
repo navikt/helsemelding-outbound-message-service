@@ -1,7 +1,6 @@
 package no.nav.helsemelding.outbound.model
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
@@ -13,5 +12,3 @@ data class MessageStatusEvent(
     val apprec: AppRecPayload? = null,
     val error: ErrorPayload? = null
 )
-
-fun MessageStatusEvent.toJson(): String = Json.encodeToString(MessageStatusEvent.serializer(), this)
