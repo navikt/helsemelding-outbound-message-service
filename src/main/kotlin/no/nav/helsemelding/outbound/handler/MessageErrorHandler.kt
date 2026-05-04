@@ -49,7 +49,7 @@ class MessageErrorHandler(
         record: MessageRecord
     ): MessageErrorEvent =
         MessageErrorEvent(
-            timestamp = Clock.System.now(),
+            processedAt = Clock.System.now(),
             error = ErrorInfo(
                 category = ErrorCategory.VALIDATION,
                 code = ErrorCode.INVALID_KAFKA_KEY,

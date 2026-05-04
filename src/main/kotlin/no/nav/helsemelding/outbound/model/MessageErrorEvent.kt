@@ -5,7 +5,7 @@ import kotlin.time.Instant
 
 @Serializable
 data class MessageErrorEvent(
-    val timestamp: Instant,
+    val processedAt: Instant,
     val error: ErrorInfo,
     val originalMessage: OriginalMessage
 )
