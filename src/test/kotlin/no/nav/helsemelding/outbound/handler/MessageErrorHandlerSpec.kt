@@ -11,6 +11,7 @@ import no.nav.helsemelding.outbound.model.MessageRecord
 import no.nav.helsemelding.outbound.model.OriginalMessage
 import no.nav.helsemelding.outbound.publisher.FakeErrorMessagePublisher
 import no.nav.helsemelding.outbound.receiver.RecordKeyValidation
+import kotlin.time.Clock
 
 class MessageErrorHandlerSpec : StringSpec(
     {
@@ -31,7 +32,8 @@ class MessageErrorHandlerSpec : StringSpec(
             val record = MessageRecord(
                 key = "not-a-uuid",
                 payload = """{"foo":"bar"}""".encodeToByteArray(),
-                offset = 42L
+                offset = 42L,
+                occuredAt = Clock.System.now().epochSeconds
             )
 
             val validation = RecordKeyValidation.Invalid(
@@ -60,7 +62,8 @@ class MessageErrorHandlerSpec : StringSpec(
             val record = MessageRecord(
                 key = null,
                 payload = """{"foo":"bar"}""".encodeToByteArray(),
-                offset = 42L
+                offset = 42L,
+                occuredAt = Clock.System.now().epochSeconds
             )
 
             val validation = RecordKeyValidation.Invalid(

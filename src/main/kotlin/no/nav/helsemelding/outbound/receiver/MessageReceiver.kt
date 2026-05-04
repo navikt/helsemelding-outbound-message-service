@@ -42,7 +42,8 @@ class MessageReceiver(
         MessageRecord(
             key = key(),
             payload = value(),
-            offset = offset.offset
+            offset = offset.offset,
+            occuredAt = timestamp()
         )
 }
 
