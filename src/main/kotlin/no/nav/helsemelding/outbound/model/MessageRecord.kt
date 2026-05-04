@@ -4,5 +4,5 @@ data class MessageRecord(
     val key: String?,
     val payload: ByteArray,
     val offset: Long,
-    val occuredAt: Long
+    val occurredAt: Long
 )
