@@ -56,6 +56,7 @@ class MessageErrorHandler(
                 message = validation.reason
             ),
             originalMessage = OriginalMessage(
+                createdAt = record.createdAt,
                 key = record.key,
                 payload = record.payload.decodeToString()
             )

@@ -43,7 +43,7 @@ class MessageReceiver(
             key = key(),
             payload = value(),
             offset = offset.offset,
-            occurredAt = timestamp()
+            createdAt = timestamp()
         )
 }
 
