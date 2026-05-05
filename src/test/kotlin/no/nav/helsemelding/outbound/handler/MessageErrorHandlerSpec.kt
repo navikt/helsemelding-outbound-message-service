@@ -33,7 +33,7 @@ class MessageErrorHandlerSpec : StringSpec(
                 key = "not-a-uuid",
                 payload = """{"foo":"bar"}""".encodeToByteArray(),
                 offset = 42L,
-                occurredAt = Clock.System.now().epochSeconds
+                createdAt = Clock.System.now().epochSeconds
             )
 
             val validation = RecordKeyValidation.Invalid(
@@ -53,6 +53,7 @@ class MessageErrorHandlerSpec : StringSpec(
             )
 
             event.originalMessage shouldBe OriginalMessage(
+                createdAt = record.createdAt,
                 key = "not-a-uuid",
                 payload = """{"foo":"bar"}"""
             )
@@ -63,7 +64,7 @@ class MessageErrorHandlerSpec : StringSpec(
                 key = null,
                 payload = """{"foo":"bar"}""".encodeToByteArray(),
                 offset = 42L,
-                occurredAt = Clock.System.now().epochSeconds
+                createdAt = Clock.System.now().epochSeconds
             )
 
             val validation = RecordKeyValidation.Invalid(
@@ -77,6 +78,7 @@ class MessageErrorHandlerSpec : StringSpec(
             val (_, event) = publisher.published.single()
 
             event.originalMessage shouldBe OriginalMessage(
+                createdAt = record.createdAt,
                 key = null,
                 payload = """{"foo":"bar"}"""
             )
