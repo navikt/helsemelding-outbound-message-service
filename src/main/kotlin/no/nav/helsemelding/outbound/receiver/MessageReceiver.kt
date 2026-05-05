@@ -2,69 +2,68 @@ package no.nav.helsemelding.outbound.receiver
 
 import io.github.nomisRev.kafka.receiver.KafkaReceiver
 import io.github.nomisRev.kafka.receiver.ReceiverRecord
-import io.github.nomisRev.kafka.receiver.ReceiverSettings
-import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
-import no.nav.helsemelding.outbound.metrics.ErrorTypeTag
-import no.nav.helsemelding.outbound.metrics.Metrics
+import kotlinx.coroutines.flow.mapNotNull
+import no.nav.helsemelding.outbound.handler.MessageHandler
 import no.nav.helsemelding.outbound.model.DialogMessage
-import org.apache.kafka.common.serialization.ByteArrayDeserializer
-import org.apache.kafka.common.serialization.StringDeserializer
+import no.nav.helsemelding.outbound.model.MessageRecord
 import kotlin.uuid.Uuid
-
-private val log = KotlinLogging.logger {}
 
 class MessageReceiver(
     private val dialogMessageOutTopic: String,
     private val kafkaReceiver: KafkaReceiver<String, ByteArray>,
-    private val metrics: Metrics
+    private val messageHandler: MessageHandler
 ) {
-    fun receiveMessages(): Flow<DialogMessage> = kafkaReceiver
-        .receive(dialogMessageOutTopic)
-        .filter { record -> isValidRecordKey(record, metrics) }
-        .onEach { metrics.registerOutgoingMessageReceived() }
-        .map(::toMessage)
+    fun receiveMessages(): Flow<DialogMessage> =
+        kafkaReceiver
+            .receive(dialogMessageOutTopic)
+            .mapNotNull { record ->
+                when (val validation = validateRecordKey(record)) {
+                    RecordKeyValidation.Valid ->
+                        toMessage(record)
 
-    private suspend fun toMessage(record: ReceiverRecord<String, ByteArray>): DialogMessage {
-        return DialogMessage(
+                    is RecordKeyValidation.Invalid -> {
+                        messageHandler.handleInvalidKafkaKey(
+                            record = record.toMessageRecord(),
+                            validation = validation
+                        )
+                        null
+                    }
+                }
+            }
+
+    private fun toMessage(record: ReceiverRecord<String, ByteArray>): DialogMessage =
+        DialogMessage(
             Uuid.parse(record.key()),
             record.value()
         )
-    }
-}
 
-internal fun isValidRecordKey(
-    record: ReceiverRecord<String, ByteArray>,
-    metrics: Metrics
-): Boolean {
-    val key = record.key()
-    if (key == null) {
-        log.error { "Receiver record key is null. Key should be a valid uuid. Offset: ${record.offset.offset}" }
-        metrics.registerOutgoingMessageFailed(ErrorTypeTag.INVALID_KAFKA_KEY)
-        return false
-    }
-
-    return if (Uuid.parseOrNull(key) != null) {
-        true
-    } else {
-        log.error { "Receiver record key: $key is invalid and therefore ignored." }
-        metrics.registerOutgoingMessageFailed(ErrorTypeTag.INVALID_KAFKA_KEY)
-        false
-    }
-}
-
-fun fakeMessageReceiver(metrics: Metrics): MessageReceiver = MessageReceiver(
-    "fake.dialog.topic",
-    KafkaReceiver(
-        ReceiverSettings(
-            bootstrapServers = "",
-            keyDeserializer = StringDeserializer(),
-            valueDeserializer = ByteArrayDeserializer(),
-            groupId = ""
+    private fun ReceiverRecord<String, ByteArray>.toMessageRecord(): MessageRecord =
+        MessageRecord(
+            key = key(),
+            payload = value(),
+            offset = offset.offset,
+            occurredAt = timestamp()
         )
-    ),
-    metrics
-)
+}
+
+sealed interface RecordKeyValidation {
+    data object Valid : RecordKeyValidation
+
+    data class Invalid(
+        val reason: String
+    ) : RecordKeyValidation
+}
+
+internal fun validateRecordKey(
+    record: ReceiverRecord<String, ByteArray>
+): RecordKeyValidation =
+    when (val key = record.key()) {
+        null -> RecordKeyValidation.Invalid("Kafka record key is null")
+        else ->
+            if (Uuid.parseOrNull(key) == null) {
+                RecordKeyValidation.Invalid("Kafka record key is not a valid UUID")
+            } else {
+                RecordKeyValidation.Valid
+            }
+    }

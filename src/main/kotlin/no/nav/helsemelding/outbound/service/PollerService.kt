@@ -41,7 +41,6 @@ import no.nav.helsemelding.outbound.model.formatInvalidState
 import no.nav.helsemelding.outbound.model.formatTransition
 import no.nav.helsemelding.outbound.model.formatUnchanged
 import no.nav.helsemelding.outbound.model.logPrefix
-import no.nav.helsemelding.outbound.model.toJson
 import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
 import no.nav.helsemelding.outbound.util.translate
 import no.nav.helsemelding.outbound.util.withSpan
@@ -221,7 +220,7 @@ class PollerService(
     ): Either<PublishError, RecordMetadata> =
         statusMessagePublisher.publish(
             message.id,
-            statusMessageEvent(message, decision, apprecInfo).toJson()
+            statusMessageEvent(message, decision, apprecInfo)
         ).withLogging(message.id)
 
     private fun statusMessageEvent(

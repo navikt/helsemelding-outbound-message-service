@@ -4,51 +4,62 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import io.github.nomisRev.kafka.publisher.KafkaPublisher
-import io.github.oshai.kotlinlogging.KotlinLogging
 import no.nav.helsemelding.outbound.PublishError
 import no.nav.helsemelding.outbound.config
+import no.nav.helsemelding.outbound.model.MessageErrorEvent
+import no.nav.helsemelding.outbound.model.MessageStatusEvent
 import no.nav.helsemelding.outbound.util.toEither
+import no.nav.helsemelding.outbound.util.toJson
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.clients.producer.RecordMetadata
 import org.apache.kafka.common.TopicPartition
 import kotlin.uuid.Uuid
 
-private val log = KotlinLogging.logger {}
+typealias StatusMessagePublisher = MessagePublisher<MessageStatusEvent>
+typealias ErrorMessagePublisher = MessagePublisher<MessageErrorEvent>
 
-typealias DialogMessagePublisher = MessagePublisher
-typealias StatusMessagePublisher = MessagePublisher
-
-interface MessagePublisher {
-    suspend fun publish(referenceId: Uuid, message: String): Either<PublishError, RecordMetadata>
+interface MessagePublisher<T> {
+    suspend fun publish(referenceId: Uuid, message: T): Either<PublishError, RecordMetadata>
 }
-
-fun dialogMessagePublisher(
-    kafkaPublisher: KafkaPublisher<String, ByteArray>
-): DialogMessagePublisher =
-    GenericMessagePublisher(
-        kafkaPublisher = kafkaPublisher,
-        topic = config().kafka.topics.dialogMessageIn
-    )
 
 fun statusMessagePublisher(
     kafkaPublisher: KafkaPublisher<String, ByteArray>
 ): StatusMessagePublisher =
-    GenericMessagePublisher(
+    genericMessagePublisher(
         kafkaPublisher = kafkaPublisher,
         topic = config().kafka.topics.statusMessage
     )
 
-private class GenericMessagePublisher(
+fun errorMessagePublisher(
+    kafkaPublisher: KafkaPublisher<String, ByteArray>
+): ErrorMessagePublisher =
+    genericMessagePublisher(
+        kafkaPublisher = kafkaPublisher,
+        topic = config().kafka.topics.errorMessage
+    )
+
+private inline fun <reified T> genericMessagePublisher(
+    kafkaPublisher: KafkaPublisher<String, ByteArray>,
+    topic: String
+): MessagePublisher<T> =
+    GenericMessagePublisher(
+        kafkaPublisher = kafkaPublisher,
+        topic = topic,
+        serialize = { message -> message.toJson().toByteArray() }
+    )
+
+private class GenericMessagePublisher<T>(
     private val kafkaPublisher: KafkaPublisher<String, ByteArray>,
-    private val topic: String
-) : MessagePublisher {
-    override suspend fun publish(referenceId: Uuid, message: String): Either<PublishError, RecordMetadata> =
+    private val topic: String,
+    private val serialize: (T) -> ByteArray
+) : MessagePublisher<T> {
+    override suspend fun publish(referenceId: Uuid, message: T): Either<PublishError, RecordMetadata> =
         kafkaPublisher.publishScope {
             publishCatching(
                 ProducerRecord(
                     topic,
                     referenceId.toString(),
-                    message.toByteArray()
+                    serialize(message)
                 )
             )
         }
@@ -57,24 +68,26 @@ private class GenericMessagePublisher(
 
 class FakeStatusMessagePublisher(
     private val topic: String = config().kafka.topics.statusMessage
-) : MessagePublisher {
-
-    val published = mutableListOf<ByteArray>()
+) : StatusMessagePublisher {
+    val published = mutableListOf<MessageStatusEvent>()
     var failNext = false
 
-    override suspend fun publish(referenceId: Uuid, message: String): Either<PublishError, RecordMetadata> {
+    override suspend fun publish(
+        referenceId: Uuid,
+        message: MessageStatusEvent
+    ): Either<PublishError, RecordMetadata> {
         if (failNext) {
             failNext = false
             return PublishError.Failure(
                 messageId = referenceId,
                 topic = topic,
                 cause = RuntimeException("Publish failure")
-            )
-                .left()
+            ).left()
         }
 
-        val bytes = message.toByteArray()
-        published += bytes
+        published += message
+
+        val bytes = message.toJson().toByteArray()
 
         val md = RecordMetadata(
             TopicPartition(topic, 0),
@@ -86,5 +99,28 @@ class FakeStatusMessagePublisher(
         )
 
         return md.right()
+    }
+}
+
+class FakeErrorMessagePublisher(
+    private val topic: String = config().kafka.topics.errorMessage
+) : ErrorMessagePublisher {
+    val published = mutableListOf<Pair<Uuid, MessageErrorEvent>>()
+
+    override suspend fun publish(
+        referenceId: Uuid,
+        message: MessageErrorEvent
+    ): Either<PublishError, RecordMetadata> {
+        published += referenceId to message
+
+        return RecordMetadata(
+            TopicPartition(topic, 0),
+            0L,
+            0,
+            System.currentTimeMillis(),
+            referenceId.toByteArray().size,
+            message.toJson().encodeToByteArray().size
+        )
+            .right()
     }
 }

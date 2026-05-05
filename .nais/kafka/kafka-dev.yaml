@@ -82,3 +82,31 @@ spec:
     - access: read
       application: kafka-manager
       team: helsemelding
+
+---
+
+apiVersion: kafka.nais.io/v1
+kind: Topic
+metadata:
+  labels:
+    team: helsemelding
+  name: dialog.out.error
+  namespace: helsemelding
+spec:
+  pool: nav-dev
+  config:
+    cleanupPolicy: delete
+    maxMessageBytes: 1048588
+    minimumInSyncReplicas: 2
+    partitions: 1
+    replication: 3
+    retentionBytes: -1
+    retentionHours: 168
+    segmentHours: 168
+  acl:
+    - access: write
+      application: outbound-message-service
+      team: helsemelding
+    - access: read
+      application: kafka-manager
+      team: helsemelding

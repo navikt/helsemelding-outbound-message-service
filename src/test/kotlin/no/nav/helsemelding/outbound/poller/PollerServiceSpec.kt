@@ -4,7 +4,6 @@ import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
-import kotlinx.serialization.json.Json
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.AppRecStatus.OK
 import no.nav.helsemelding.ediadapter.model.ApprecInfo
@@ -21,11 +20,10 @@ import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.MessageStatus
 import no.nav.helsemelding.outbound.model.MessageStatus.PENDING_APPREC
 import no.nav.helsemelding.outbound.model.MessageStatus.PENDING_TRANSPORT
-import no.nav.helsemelding.outbound.model.MessageStatusEvent
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.publisher.FakeStatusMessagePublisher
-import no.nav.helsemelding.outbound.publisher.MessagePublisher
+import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
 import no.nav.helsemelding.outbound.service.FakeTransactionalMessageStateService
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.PollerService
@@ -166,13 +164,13 @@ class PollerServiceSpec : StringSpec(
                 )
             ).shouldBeRight()
 
-            ediAdapterClient.givenStatus(externalRefId, DeliveryState.UNCONFIRMED, null)
+            ediAdapterClient.givenStatus(externalRefId, UNCONFIRMED, null)
 
             pollerService.pollAndProcessMessage(snapshot.messageState)
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            val event = statusMessagePublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe PENDING_TRANSPORT
             event.apprec shouldBe null
@@ -201,7 +199,7 @@ class PollerServiceSpec : StringSpec(
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            val event = statusMessagePublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe PENDING_APPREC
             event.apprec shouldBe null
@@ -243,7 +241,7 @@ class PollerServiceSpec : StringSpec(
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            val event = statusMessagePublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.COMPLETED
             event.error shouldBe null
@@ -275,7 +273,7 @@ class PollerServiceSpec : StringSpec(
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            val event = statusMessagePublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.REJECTED_TRANSPORT
             event.apprec shouldBe null
@@ -318,7 +316,7 @@ class PollerServiceSpec : StringSpec(
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            val event = statusMessagePublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.REJECTED_APPREC
             event.error shouldBe null
@@ -349,7 +347,7 @@ class PollerServiceSpec : StringSpec(
 
             statusMessagePublisher.published.size shouldBe 1
 
-            val event = decodeStatusEvent(statusMessagePublisher.published.single())
+            val event = statusMessagePublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.INVALID
             event.apprec shouldBe null
@@ -386,7 +384,7 @@ private fun fixture(): Fixture {
 private fun pollerService(
     ediAdapterClient: EdiAdapterClient,
     messageStateService: MessageStateService,
-    messagePublisher: MessagePublisher
+    messagePublisher: StatusMessagePublisher
 ): PollerService = PollerService(
     ediAdapterClient,
     messageStateService,
@@ -401,5 +399,3 @@ private fun stateEvaluatorService(): StateEvaluatorService = StateEvaluatorServi
         AppRecTransitionEvaluator()
     )
 )
-
-private fun decodeStatusEvent(bytes: ByteArray): MessageStatusEvent = Json.decodeFromString(String(bytes))
