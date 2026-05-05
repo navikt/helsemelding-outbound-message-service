@@ -1,10 +1,11 @@
 package no.nav.helsemelding.outbound.model
 
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 @Serializable
 data class OriginalMessage(
-    val createdAt: Long,
+    val createdAt: Instant,
     val key: String?,
     val payload: String?
 )

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.mapNotNull
 import no.nav.helsemelding.outbound.handler.MessageHandler
 import no.nav.helsemelding.outbound.model.DialogMessage
 import no.nav.helsemelding.outbound.model.MessageRecord
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 class MessageReceiver(
@@ -43,7 +44,7 @@ class MessageReceiver(
             key = key(),
             payload = value(),
             offset = offset.offset,
-            createdAt = timestamp()
+            createdAt = Instant.fromEpochMilliseconds(timestamp())
         )
 }
 
