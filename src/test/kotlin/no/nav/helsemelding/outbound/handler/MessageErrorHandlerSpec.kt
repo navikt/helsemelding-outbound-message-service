@@ -33,7 +33,7 @@ class MessageErrorHandlerSpec : StringSpec(
                 key = "not-a-uuid",
                 payload = """{"foo":"bar"}""".encodeToByteArray(),
                 offset = 42L,
-                createdAt = Clock.System.now().epochSeconds
+                createdAt = Clock.System.now()
             )
 
             val validation = RecordKeyValidation.Invalid(
@@ -64,7 +64,7 @@ class MessageErrorHandlerSpec : StringSpec(
                 key = null,
                 payload = """{"foo":"bar"}""".encodeToByteArray(),
                 offset = 42L,
-                createdAt = Clock.System.now().epochSeconds
+                createdAt = Clock.System.now()
             )
 
             val validation = RecordKeyValidation.Invalid(
