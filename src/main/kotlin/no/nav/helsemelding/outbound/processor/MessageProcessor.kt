@@ -27,6 +27,7 @@ class MessageProcessor(
 ) {
     fun processMessages(scope: CoroutineScope): Job =
         messageFlow()
+            .onEach { metrics.registerOutgoingMessageReceived() }
             .onEach { message ->
                 val durationNanos = measureNanoTime {
                     processMessage(message)
