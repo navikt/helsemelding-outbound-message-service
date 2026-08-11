@@ -21,6 +21,9 @@ spec:
       application: outbound-message-service
       team: helsemelding
     - access: write
+      application: outbound-processing-service
+      team: helsemelding
+    - access: write
       application: message-generator
       team: helsemelding
     - access: read
