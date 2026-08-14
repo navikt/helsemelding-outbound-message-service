@@ -82,6 +82,9 @@ spec:
     - access: write
       application: outbound-message-service
       team: helsemelding
+    - access: write
+      application: outbound-processing-service
+      team: helsemelding
     - access: read
       application: kafka-manager
       team: helsemelding
