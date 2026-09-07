@@ -23,7 +23,7 @@ interface MessagePublisher {
     suspend fun publish(message: MessageStatusEvent): Either<PublishError, RecordMetadata>
 }
 
-class OutboundMessagePublisher(
+class StatusMessagePublisher(
     private val topics: Topics,
     private val kafkaPublisher: KafkaPublisher<String, ByteArray>,
     private val json: Json = Json

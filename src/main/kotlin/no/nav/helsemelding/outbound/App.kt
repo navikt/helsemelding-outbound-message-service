@@ -22,7 +22,7 @@ import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.plugin.configureMetrics
 import no.nav.helsemelding.outbound.plugin.configureRoutes
 import no.nav.helsemelding.outbound.processor.MessageProcessor
-import no.nav.helsemelding.outbound.publisher.OutboundMessagePublisher
+import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
 import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateHistoryRepository
@@ -51,7 +51,7 @@ fun main() = SuspendApp {
                 deps.ediAdapterClient,
                 messageStateService(deps.database),
                 stateEvaluatorService(),
-                OutboundMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
+                StatusMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
             )
 
             val messageLifecycleService = MessageLifecycleOrchestratorService(
