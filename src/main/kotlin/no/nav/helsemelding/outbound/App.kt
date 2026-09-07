@@ -5,7 +5,6 @@ import arrow.continuations.ktor.server
 import arrow.core.raise.result
 import arrow.fx.coroutines.resourceScope
 import arrow.resilience.Schedule
-import io.github.nomisRev.kafka.publisher.KafkaPublisher
 import io.github.nomisRev.kafka.receiver.KafkaReceiver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.Application
@@ -18,14 +17,12 @@ import no.nav.helsemelding.outbound.evaluator.AppRecTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.StateTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.TransportStatusTranslator
 import no.nav.helsemelding.outbound.evaluator.TransportTransitionEvaluator
-import no.nav.helsemelding.outbound.handler.MessageErrorHandler
 import no.nav.helsemelding.outbound.metrics.CustomMetrics
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.plugin.configureMetrics
 import no.nav.helsemelding.outbound.plugin.configureRoutes
 import no.nav.helsemelding.outbound.processor.MessageProcessor
-import no.nav.helsemelding.outbound.publisher.errorMessagePublisher
-import no.nav.helsemelding.outbound.publisher.statusMessagePublisher
+import no.nav.helsemelding.outbound.publisher.OutboundMessagePublisher
 import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateHistoryRepository
@@ -54,7 +51,7 @@ fun main() = SuspendApp {
                 deps.ediAdapterClient,
                 messageStateService(deps.database),
                 stateEvaluatorService(),
-                statusMessagePublisher(deps.kafkaPublisher)
+                OutboundMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
             )
 
             val messageLifecycleService = MessageLifecycleOrchestratorService(
@@ -65,7 +62,7 @@ fun main() = SuspendApp {
             )
 
             val messageProcessor = MessageProcessor(
-                messageReceiver = messageReceiver(deps.kafkaReceiver, deps.kafkaPublisher, metrics),
+                messageReceiver = messageReceiver(deps.kafkaReceiver),
                 messageLifecycleService = messageLifecycleService,
                 metrics = metrics
             )
@@ -165,15 +162,9 @@ private fun metricsService(database: Database): MetricsService {
 }
 
 private fun messageReceiver(
-    kafkaReceiver: KafkaReceiver<String, ByteArray>,
-    kafkaPublisher: KafkaPublisher<String, ByteArray>,
-    metrics: Metrics
+    kafkaReceiver: KafkaReceiver<String, ByteArray>
 ): MessageReceiver =
     MessageReceiver(
         config().kafka.topics.dialogMessageOut,
-        kafkaReceiver,
-        MessageErrorHandler(
-            metrics,
-            errorMessagePublisher(kafkaPublisher)
-        )
+        kafkaReceiver
     )

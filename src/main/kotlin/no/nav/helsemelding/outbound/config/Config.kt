@@ -96,8 +96,7 @@ fun Config.withKafka(update: Kafka.() -> Kafka) = copy(kafka = kafka.update())
 data class Topics(
     val dialogMessageIn: String,
     val dialogMessageOut: String,
-    val statusMessage: String,
-    val errorMessage: String
+    val statusMessage: String
 )
 
 data class Server(
