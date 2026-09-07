@@ -41,7 +41,7 @@ import no.nav.helsemelding.outbound.model.formatInvalidState
 import no.nav.helsemelding.outbound.model.formatTransition
 import no.nav.helsemelding.outbound.model.formatUnchanged
 import no.nav.helsemelding.outbound.model.logPrefix
-import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
+import no.nav.helsemelding.outbound.publisher.MessagePublisher
 import no.nav.helsemelding.outbound.util.translate
 import no.nav.helsemelding.outbound.util.withSpan
 import no.nav.helsemelding.outbound.withMessageContext
@@ -58,7 +58,7 @@ class PollerService(
     private val ediAdapterClient: EdiAdapterClient,
     private val messageStateService: MessageStateService,
     private val stateEvaluatorService: StateEvaluatorService,
-    private val statusMessagePublisher: StatusMessagePublisher
+    private val statusMessagePublisher: MessagePublisher
 ) {
     private val pollerConfig = config().poller
 
@@ -219,9 +219,8 @@ class PollerService(
         apprecInfo: ApprecInfo?
     ): Either<PublishError, RecordMetadata> =
         statusMessagePublisher.publish(
-            message.id,
             statusMessageEvent(message, decision, apprecInfo)
-        ).withLogging(message.id)
+        )
 
     private fun statusMessageEvent(
         message: MessageState,
@@ -319,15 +318,6 @@ class PollerService(
                 "new=(transport=${newEvaluationState.transport}, appRec=${newEvaluationState.appRec}), " +
                 "next=$nextState"
         }
-    }
-
-    private fun Either<PublishError, RecordMetadata>.withLogging(
-        messageId: Uuid
-    ): Either<PublishError, RecordMetadata> = also { either ->
-        either.fold(
-            { log.error { "Publish failed: messageId=$messageId, error=$it" } },
-            { log.info { "Publish succeeded: messageId=$messageId, topic=${it.topic()}" } }
-        )
     }
 
     private fun List<MessageState>.withLogging(): List<MessageState> = also {

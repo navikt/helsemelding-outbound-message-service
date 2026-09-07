@@ -23,7 +23,7 @@ import no.nav.helsemelding.outbound.model.MessageStatus.PENDING_TRANSPORT
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.publisher.FakeStatusMessagePublisher
-import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
+import no.nav.helsemelding.outbound.publisher.MessagePublisher
 import no.nav.helsemelding.outbound.service.FakeTransactionalMessageStateService
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.PollerService
@@ -384,7 +384,7 @@ private fun fixture(): Fixture {
 private fun pollerService(
     ediAdapterClient: EdiAdapterClient,
     messageStateService: MessageStateService,
-    messagePublisher: StatusMessagePublisher
+    messagePublisher: MessagePublisher
 ): PollerService = PollerService(
     ediAdapterClient,
     messageStateService,
