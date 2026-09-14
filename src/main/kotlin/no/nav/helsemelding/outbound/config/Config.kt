@@ -19,8 +19,7 @@ data class Config(
     val poller: Poller,
     val metrics: Metrics,
     val database: Database,
-    val ediAdapter: EdiAdapter,
-    val payloadSigning: PayloadSigning
+    val ediAdapter: EdiAdapter
 )
 
 data class Kafka(
@@ -107,13 +106,6 @@ data class Server(
 }
 
 data class EdiAdapter(
-    val scope: Scope
-) {
-    @JvmInline
-    value class Scope(val value: String)
-}
-
-data class PayloadSigning(
     val scope: Scope
 ) {
     @JvmInline

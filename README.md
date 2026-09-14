@@ -28,7 +28,7 @@ For each consumed message:
 1. The message is handed to a **message processor** which delegates further processing to **message lifecycle service**.
 2. The lifecycle service checks if the **lifecycleId** of the incoming message is already tracked.
    - If it is, then further processing stops and a **LifecycleError** is returned.
-   - If it is not, then the lifecycle service signs the payload, and then posts it to the `edi-adapter` using the `edi-adapter-client`.
+   - If it is not, then the lifecycle service posts the message to the `edi-adapter` using the `edi-adapter-client`.
 3. The adapter returns:
    - an **external reference ID**
    - a **URL** to the external message resource
