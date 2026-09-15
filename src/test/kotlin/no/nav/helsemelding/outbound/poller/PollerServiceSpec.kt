@@ -162,10 +162,13 @@ class PollerServiceSpec : StringSpec(
 
             event.status shouldBe MessageStatus.REJECTED_APPREC
             event.apprec!!.receiverHerId shouldBe 700
-            event.apprec.errorList.single().code shouldBe "E10"
-            event.apprec.errorList.single().details shouldBe "Specific detail"
-            event.apprec.errorList.single().description shouldBe "Description"
-            event.apprec.errorList.single().oid shouldBe "oid"
+
+            val appRecErrorMessage = event.apprec.errorList.single()
+
+            appRecErrorMessage.code shouldBe "E10"
+            appRecErrorMessage.details shouldBe "Specific detail"
+            appRecErrorMessage.description shouldBe "Description"
+            appRecErrorMessage.oid shouldBe "oid"
             client.statusRequests shouldBe listOf(ref)
         }
 
