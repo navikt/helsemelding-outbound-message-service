@@ -1,11 +1,11 @@
 package no.nav.helsemelding.outbound
 
-import no.nav.helsemelding.ediadapter.model.ErrorMessage
+import no.nav.helsemelding.messageconverter.error.ConversionError
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
-import java.net.URL
 import kotlin.uuid.Uuid
+import no.nav.helsemelding.ediadapter.client.EdiAdapterError as ClientEdiAdapterError
 
 sealed interface Error
 
@@ -28,18 +28,9 @@ sealed class StateTransitionError : StateError {
 }
 
 sealed interface EdiAdapterError : StateError {
-    data class NoApprecReturned(
-        val externalRefId: Uuid
-    ) : EdiAdapterError
-
-    data class FetchFailure(
-        val externalRefId: Uuid,
-        val cause: ErrorMessage
-    ) : EdiAdapterError
-
     data class SendFailure(
         val lifecycleId: Uuid,
-        val cause: ErrorMessage
+        val cause: ClientEdiAdapterError
     ) : EdiAdapterError
 }
 
@@ -58,9 +49,7 @@ sealed interface LifecycleError : StateError {
     data class ConflictingLifecycleId(
         val messageId: Uuid,
         val existingExternalRefId: Uuid?,
-        val existingExternalUrl: URL?,
-        val newExternalRefId: Uuid?,
-        val newExternalUrl: URL?
+        val newExternalRefId: Uuid?
     ) : Conflict
 
     data class ConflictingExternalReferenceId(
@@ -69,16 +58,16 @@ sealed interface LifecycleError : StateError {
         val newMessageId: Uuid
     ) : Conflict
 
-    data class ConflictingExternalMessageUrl(
-        val externalUrl: URL,
-        val existingMessageId: Uuid,
-        val newMessageId: Uuid
-    ) : Conflict
-
     data class PersistenceFailure(
         val messageId: Uuid,
         val reason: String
     ) : LifecycleError
+
+    data class MetadataExtractionFailure(val messageId: Uuid, val cause: ConversionError) : LifecycleError
+
+    data class MissingExternalReferenceId(val messageId: Uuid) : LifecycleError
+
+    data class InvalidExternalReferenceId(val messageId: Uuid, val externalRefId: String) : LifecycleError
 
     sealed interface ExternalFailure : LifecycleError
 

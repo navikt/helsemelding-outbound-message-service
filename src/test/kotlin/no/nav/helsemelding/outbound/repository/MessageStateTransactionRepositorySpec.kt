@@ -12,11 +12,8 @@ import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.shouldBeInstant
 import org.testcontainers.containers.PostgreSQLContainer
-import java.net.URI
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
-
-private const val MESSAGE = "http://exmaple.com/messages/1"
 
 class MessageStateTransactionRepositorySpec : StringSpec(
     {
@@ -40,7 +37,6 @@ class MessageStateTransactionRepositorySpec : StringSpec(
 
                 val id = Uuid.random()
                 val externalRefId = Uuid.random()
-                val url = URI.create(MESSAGE).toURL()
                 val now = Clock.System.now()
 
                 val messageStateSnapshot = messageStateTransactionRepository.createInitialState(
@@ -48,7 +44,6 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = url,
                         occurredAt = now
                     )
                 )
@@ -59,7 +54,6 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                 messageState.id shouldBe id
                 messageState.externalRefId shouldBe externalRefId
                 messageState.messageType shouldBe DIALOG
-                messageState.externalMessageUrl shouldBe url
 
                 messageState.externalDeliveryState shouldBe null
                 messageState.appRecStatus shouldBe null
@@ -88,7 +82,6 @@ class MessageStateTransactionRepositorySpec : StringSpec(
 
                 val id = Uuid.random()
                 val externalRefId = Uuid.random()
-                val externalMessageUrl = URI.create(MESSAGE).toURL()
                 val now = Clock.System.now()
 
                 messageStateTransactionRepository.createInitialState(
@@ -96,7 +89,6 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         occurredAt = now
                     )
                 )

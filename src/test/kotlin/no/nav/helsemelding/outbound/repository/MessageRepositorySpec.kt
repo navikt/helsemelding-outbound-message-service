@@ -9,7 +9,6 @@ import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
-import no.nav.helsemelding.outbound.LifecycleError.ConflictingExternalMessageUrl
 import no.nav.helsemelding.outbound.LifecycleError.ConflictingExternalReferenceId
 import no.nav.helsemelding.outbound.LifecycleError.ConflictingLifecycleId
 import no.nav.helsemelding.outbound.container
@@ -31,16 +30,9 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
 import org.testcontainers.containers.PostgreSQLContainer
-import java.net.URI
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.uuid.Uuid
-
-private const val MESSAGE1 = "http://example.com/messages/1"
-private const val MESSAGE2 = "http://example.com/messages/2"
-private const val MESSAGE3 = "http://example.com/messages/3"
-private const val MESSAGE4 = "http://example.com/messages/4"
-private const val MESSAGE5 = "http://example.com/messages/5"
 
 class MessageRepositorySpec : StringSpec(
     {
@@ -61,21 +53,18 @@ class MessageRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE1).toURL()
                     val now = Clock.System.now()
 
                     val result = messageRepository.createState(
                         id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         lastStateChange = now
                     )
 
                     result.shouldBeRightOfType<CreateStateResult.Created> { created ->
                         created.state.messageType shouldBe DIALOG
                         created.state.externalRefId shouldBe externalRefId
-                        created.state.externalMessageUrl shouldBe externalMessageUrl
                         created.state.lastStateChange shouldBeInstant now
 
                         created.state.externalDeliveryState shouldBe null
@@ -94,14 +83,12 @@ class MessageRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE1).toURL()
                     val now = Clock.System.now()
 
                     val firstResult = messageRepository.createState(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         lastStateChange = now
                     )
 
@@ -109,21 +96,18 @@ class MessageRepositorySpec : StringSpec(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         lastStateChange = now
                     )
 
                     firstResult.shouldBeRightOfType<CreateStateResult.Created> { created ->
                         created.state.messageType shouldBe DIALOG
                         created.state.externalRefId shouldBe externalRefId
-                        created.state.externalMessageUrl shouldBe externalMessageUrl
                         created.state.lastStateChange shouldBeInstant now
                     }
 
                     secondResult.shouldBeRightOfType<CreateStateResult.Existing> { existing ->
                         existing.state.messageType shouldBe DIALOG
                         existing.state.externalRefId shouldBe externalRefId
-                        existing.state.externalMessageUrl shouldBe externalMessageUrl
                         existing.state.lastStateChange shouldBeInstant now
                     }
                 }
@@ -140,15 +124,12 @@ class MessageRepositorySpec : StringSpec(
                     val id = Uuid.random()
                     val externalRefId1 = Uuid.random()
                     val externalRefId2 = Uuid.random()
-                    val url1 = URI.create(MESSAGE1).toURL()
-                    val url2 = URI.create(MESSAGE2).toURL()
                     val now = Clock.System.now()
 
                     messageRepository.createState(
                         id = id,
                         externalRefId = externalRefId1,
                         messageType = DIALOG,
-                        externalMessageUrl = url1,
                         lastStateChange = now
                     )
                         .shouldBeRight()
@@ -157,7 +138,6 @@ class MessageRepositorySpec : StringSpec(
                         id = id,
                         externalRefId = externalRefId2,
                         messageType = DIALOG,
-                        externalMessageUrl = url2,
                         lastStateChange = now
                     )
 
@@ -165,9 +145,7 @@ class MessageRepositorySpec : StringSpec(
                     val lifecycleError = error.shouldBeInstanceOf<ConflictingLifecycleId>()
                     lifecycleError.messageId shouldBe id
                     lifecycleError.existingExternalRefId shouldBe externalRefId1
-                    lifecycleError.existingExternalUrl shouldBe url1
                     lifecycleError.newExternalRefId shouldBe externalRefId2
-                    lifecycleError.newExternalUrl shouldBe url2
                 }
             }
         }
@@ -182,15 +160,12 @@ class MessageRepositorySpec : StringSpec(
                     val id1 = Uuid.random()
                     val id2 = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val url1 = URI.create(MESSAGE1).toURL()
-                    val url2 = URI.create(MESSAGE2).toURL()
                     val now = Clock.System.now()
 
                     messageRepository.createState(
                         id = id1,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = url1,
                         lastStateChange = now
                     )
                         .shouldBeRight()
@@ -199,53 +174,12 @@ class MessageRepositorySpec : StringSpec(
                         id = id2,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = url2,
                         lastStateChange = now
                     )
 
                     val error = conflict.shouldBeLeft()
                     val lifecycleError = error.shouldBeInstanceOf<ConflictingExternalReferenceId>()
                     lifecycleError.externalRefId shouldBe externalRefId
-                    lifecycleError.existingMessageId shouldBe id1
-                    lifecycleError.newMessageId shouldBe id2
-                }
-            }
-        }
-
-        "Create state - conflicting message URL" {
-            resourceScope {
-                val database = database(container.jdbcUrl)
-
-                suspendTransaction(database) {
-                    val messageRepository = ExposedMessageRepository(database)
-
-                    val id1 = Uuid.random()
-                    val id2 = Uuid.random()
-                    val externalRefId1 = Uuid.random()
-                    val externalRefId2 = Uuid.random()
-                    val url = URI.create(MESSAGE1).toURL()
-                    val now = Clock.System.now()
-
-                    messageRepository.createState(
-                        id = id1,
-                        externalRefId = externalRefId1,
-                        messageType = DIALOG,
-                        externalMessageUrl = url,
-                        lastStateChange = now
-                    )
-                        .shouldBeRight()
-
-                    val conflict = messageRepository.createState(
-                        id = id2,
-                        externalRefId = externalRefId2,
-                        messageType = DIALOG,
-                        externalMessageUrl = url,
-                        lastStateChange = now
-                    )
-
-                    val error = conflict.shouldBeLeft()
-                    val lifecycleError = error.shouldBeInstanceOf<ConflictingExternalMessageUrl>()
-                    lifecycleError.externalUrl shouldBe url
                     lifecycleError.existingMessageId shouldBe id1
                     lifecycleError.newMessageId shouldBe id2
                 }
@@ -261,13 +195,11 @@ class MessageRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE1).toURL()
 
                     messageRepository.createState(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         lastStateChange = Clock.System.now()
                     )
 
@@ -306,13 +238,11 @@ class MessageRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE1).toURL()
 
                     messageRepository.createState(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         lastStateChange = Clock.System.now()
                     )
 
@@ -354,7 +284,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         Clock.System.now()
                     )
 
@@ -362,7 +291,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         Clock.System.now()
                     )
                         .shouldBeRightOfType<CreateStateResult.Created> {
@@ -375,7 +303,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE3).toURL(),
                         Clock.System.now()
                     )
                         .shouldBeRightOfType<CreateStateResult.Created> {
@@ -388,7 +315,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE4).toURL(),
                         Clock.System.now()
                     )
                         .shouldBeRightOfType<CreateStateResult.Created> {
@@ -402,7 +328,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE5).toURL(),
                         Clock.System.now()
                     )
                         .shouldBeRightOfType<CreateStateResult.Created> {
@@ -433,7 +358,6 @@ class MessageRepositorySpec : StringSpec(
                         oldId,
                         oldExternalRefId,
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         now
                     )
 
@@ -441,7 +365,6 @@ class MessageRepositorySpec : StringSpec(
                         newId,
                         newExternalRefId,
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         now
                     )
 
@@ -477,7 +400,6 @@ class MessageRepositorySpec : StringSpec(
                         neverId,
                         neverExternalRefId,
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         now
                     )
 
@@ -485,7 +407,6 @@ class MessageRepositorySpec : StringSpec(
                         recentId,
                         recentExternalRefId,
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         now
                     )
 
@@ -519,7 +440,6 @@ class MessageRepositorySpec : StringSpec(
                         id1,
                         externalRefId1,
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         now
                     )
 
@@ -527,7 +447,6 @@ class MessageRepositorySpec : StringSpec(
                         id2,
                         externalRefId2,
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         now
                     )
 
@@ -535,7 +454,6 @@ class MessageRepositorySpec : StringSpec(
                         id3,
                         externalRefId3,
                         DIALOG,
-                        URI.create(MESSAGE3).toURL(),
                         now
                     )
 
@@ -565,7 +483,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         externalRefId1,
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         now
                     )
 
@@ -573,7 +490,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         externalRefId2,
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         now
                     )
 
@@ -581,7 +497,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE3).toURL(),
                         now
                     )
 
@@ -624,7 +539,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         externalRefId1,
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         now
                     )
 
@@ -632,7 +546,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         externalRefId2,
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         now
                     )
 
@@ -640,7 +553,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE3).toURL(),
                         now
                     )
 
@@ -683,7 +595,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         externalRefId1,
                         DIALOG,
-                        URI.create(MESSAGE1).toURL(),
                         now
                     )
 
@@ -691,7 +602,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         externalRefId2,
                         DIALOG,
-                        URI.create(MESSAGE2).toURL(),
                         now
                     )
 
@@ -699,7 +609,6 @@ class MessageRepositorySpec : StringSpec(
                         Uuid.random(),
                         Uuid.random(),
                         DIALOG,
-                        URI.create(MESSAGE3).toURL(),
                         now
                     )
 

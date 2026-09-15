@@ -1,7 +1,6 @@
 package no.nav.helsemelding.outbound.model
 
 import no.nav.helsemelding.outbound.model.NextStateDecision.Transition
-import java.net.URL
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
@@ -9,7 +8,6 @@ data class MessageState(
     val id: Uuid,
     val messageType: MessageType,
     val externalRefId: Uuid,
-    val externalMessageUrl: URL,
     val externalDeliveryState: ExternalDeliveryState?,
     val appRecStatus: AppRecStatus?,
     val lastStateChange: Instant,

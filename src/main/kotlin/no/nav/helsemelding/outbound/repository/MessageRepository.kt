@@ -19,7 +19,6 @@ import no.nav.helsemelding.outbound.model.isUnconfirmed
 import no.nav.helsemelding.outbound.repository.Messages.appRecStatus
 import no.nav.helsemelding.outbound.repository.Messages.externalDeliveryState
 import no.nav.helsemelding.outbound.repository.Messages.lastPolledAt
-import no.nav.helsemelding.outbound.util.UrlTransformer
 import no.nav.helsemelding.outbound.util.UuidTransformer
 import no.nav.helsemelding.outbound.util.olderThanSeconds
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -40,7 +39,6 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.updateReturning
-import java.net.URL
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
@@ -51,10 +49,6 @@ object Messages : Table("messages") {
 
     val externalRefId = uuid("external_reference_id")
         .transform(UuidTransformer())
-        .uniqueIndex()
-
-    val externalMessageUrl = text("external_message_url")
-        .transform(UrlTransformer)
         .uniqueIndex()
 
     val messageType = enumerationByName("message_type", 100, MessageType::class)
@@ -76,7 +70,6 @@ interface MessageRepository {
         id: Uuid,
         externalRefId: Uuid,
         messageType: MessageType,
-        externalMessageUrl: URL,
         lastStateChange: Instant
     ): Either<LifecycleError, CreateStateResult>
 
@@ -109,14 +102,12 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         id: Uuid,
         externalRefId: Uuid,
         messageType: MessageType,
-        externalMessageUrl: URL,
         lastStateChange: Instant
     ): Either<LifecycleError, CreateStateResult> = either {
         findById(id)?.let { existing ->
             return lifecycleId(
                 id,
                 externalRefId,
-                externalMessageUrl,
                 existing
             )
         }
@@ -125,7 +116,6 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             insert[Messages.id] = id
             insert[Messages.externalRefId] = externalRefId
             insert[Messages.messageType] = messageType
-            insert[Messages.externalMessageUrl] = externalMessageUrl
             insert[Messages.externalDeliveryState] = null
             insert[Messages.appRecStatus] = null
             insert[Messages.lastStateChange] = lastStateChange
@@ -134,8 +124,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
 
         val created = findById(id) ?: return uniquenessConflict(
             incomingId = id,
-            incomingExternalRefId = externalRefId,
-            incomingUrl = externalMessageUrl
+            incomingExternalRefId = externalRefId
         )
 
         CreateStateResult.Created(created)
@@ -222,20 +211,16 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
     private fun lifecycleId(
         incomingId: Uuid,
         incomingExternalRefId: Uuid,
-        incomingUrl: URL,
         existing: MessageState
     ): Either<LifecycleError, CreateStateResult> {
         val isSameExternalRef = existing.externalRefId == incomingExternalRefId
-        val isSameUrl = existing.externalMessageUrl == incomingUrl
 
-        return when (isSameExternalRef && isSameUrl) {
+        return when (isSameExternalRef) {
             true -> CreateStateResult.Existing(existing).right()
             else -> LifecycleError.ConflictingLifecycleId(
                 messageId = incomingId,
                 existingExternalRefId = existing.externalRefId,
-                existingExternalUrl = existing.externalMessageUrl,
-                newExternalRefId = incomingExternalRefId,
-                newExternalUrl = incomingUrl
+                newExternalRefId = incomingExternalRefId
             )
                 .left()
         }
@@ -243,8 +228,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
 
     private suspend fun uniquenessConflict(
         incomingId: Uuid,
-        incomingExternalRefId: Uuid,
-        incomingUrl: URL
+        incomingExternalRefId: Uuid
     ): Either<LifecycleError, CreateStateResult> {
         val existingByRef = findByExternalReferenceId(incomingExternalRefId)
         if (existingByRef != null) {
@@ -256,18 +240,9 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
                 .left()
         }
 
-        val existingByUrl = findByUrlOrNull(incomingUrl)
-        if (existingByUrl != null) {
-            return LifecycleError.ConflictingExternalMessageUrl(
-                externalUrl = incomingUrl,
-                existingMessageId = existingByUrl.id,
-                newMessageId = incomingId
-            )
-                .left()
-        }
         return LifecycleError.PersistenceFailure(
             messageId = incomingId,
-            reason = "Insert was ignored but no existing row found by id, externalRefId or url"
+            reason = "Insert was ignored but no existing row found by id or externalRefId"
         )
             .left()
     }
@@ -279,18 +254,10 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             ?.toMessageState()
     }
 
-    private suspend fun findByUrlOrNull(url: URL): MessageState? = suspendTransaction(database) {
-        Messages
-            .selectAll().where { Messages.externalMessageUrl eq url }
-            .singleOrNull()
-            ?.toMessageState()
-    }
-
     private fun ResultRow.toMessageState() = MessageState(
         this[Messages.id],
         this[Messages.messageType],
         this[Messages.externalRefId],
-        this[Messages.externalMessageUrl],
         this[externalDeliveryState],
         this[appRecStatus],
         this[Messages.lastStateChange],
@@ -312,7 +279,6 @@ class FakeMessageRepository : MessageRepository {
         id: Uuid,
         externalRefId: Uuid,
         messageType: MessageType,
-        externalMessageUrl: URL,
         lastStateChange: Instant
     ): Either<LifecycleError, CreateStateResult> {
         val existingById = messagesById[id]
@@ -320,7 +286,6 @@ class FakeMessageRepository : MessageRepository {
             return idConflict(
                 incomingId = id,
                 incomingExternalRefId = externalRefId,
-                incomingUrl = externalMessageUrl,
                 existing = existingById
             )
         }
@@ -336,21 +301,10 @@ class FakeMessageRepository : MessageRepository {
                 .left()
         }
 
-        val existingByUrl = messagesById.values.firstOrNull { it.externalMessageUrl == externalMessageUrl }
-        if (existingByUrl != null) {
-            return LifecycleError.ConflictingExternalMessageUrl(
-                externalUrl = externalMessageUrl,
-                existingMessageId = existingByUrl.id,
-                newMessageId = id
-            )
-                .left()
-        }
-
         val newMessage = MessageState(
             id = id,
             externalRefId = externalRefId,
             messageType = messageType,
-            externalMessageUrl = externalMessageUrl,
             externalDeliveryState = null,
             appRecStatus = null,
             lastStateChange = lastStateChange,
@@ -447,20 +401,15 @@ class FakeMessageRepository : MessageRepository {
     private fun idConflict(
         incomingId: Uuid,
         incomingExternalRefId: Uuid,
-        incomingUrl: URL,
         existing: MessageState
     ): Either<LifecycleError, CreateStateResult> =
-        if (existing.externalRefId == incomingExternalRefId &&
-            existing.externalMessageUrl == incomingUrl
-        ) {
+        if (existing.externalRefId == incomingExternalRefId) {
             CreateStateResult.Existing(existing).right()
         } else {
             LifecycleError.ConflictingLifecycleId(
                 messageId = incomingId,
                 existingExternalRefId = existing.externalRefId,
-                existingExternalUrl = existing.externalMessageUrl,
-                newExternalRefId = incomingExternalRefId,
-                newExternalUrl = incomingUrl
+                newExternalRefId = incomingExternalRefId
             )
                 .left()
         }

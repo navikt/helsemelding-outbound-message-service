@@ -16,11 +16,8 @@ import org.jetbrains.exposed.v1.exceptions.ExposedSQLException
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.postgresql.util.PSQLException
 import org.testcontainers.containers.PostgreSQLContainer
-import java.net.URI
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
-
-private const val MESSAGE = "http://exmaple.com/messages/1"
 
 class MessageStateHistoryRepositorySpec : StringSpec(
     {
@@ -66,14 +63,12 @@ class MessageStateHistoryRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE).toURL()
                     val occurredAt = Clock.System.now()
 
                     messageRepository.createState(
                         id = id,
                         externalRefId = externalRefId,
                         messageType = DIALOG,
-                        externalMessageUrl = externalMessageUrl,
                         lastStateChange = occurredAt
                     )
 
@@ -108,14 +103,12 @@ class MessageStateHistoryRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE).toURL()
                     val now = Clock.System.now()
 
                     messageRepository.createState(
                         id,
                         externalRefId,
                         DIALOG,
-                        externalMessageUrl,
                         now
                     )
 
@@ -170,14 +163,12 @@ class MessageStateHistoryRepositorySpec : StringSpec(
 
                     val id = Uuid.random()
                     val externalRefId = Uuid.random()
-                    val externalMessageUrl = URI.create(MESSAGE).toURL()
                     val now = Clock.System.now()
 
                     messageRepository.createState(
                         id,
                         externalRefId,
                         DIALOG,
-                        externalMessageUrl,
                         now
                     )
 
