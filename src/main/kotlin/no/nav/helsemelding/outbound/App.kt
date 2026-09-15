@@ -57,7 +57,6 @@ fun main() = SuspendApp {
             val messageLifecycleService = MessageLifecycleOrchestratorService(
                 messageStateService = messageStateService(deps.database),
                 ediAdapterClient = deps.ediAdapterClient,
-                payloadSigningClient = deps.payloadSigningClient,
                 metrics = metrics
             )
 

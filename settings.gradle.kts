@@ -30,7 +30,6 @@ dependencyResolutionManagement {
             version("logback", "1.4.11")
             version("logstash", "7.4")
             version("edi-adapter-client", "0.0.7")
-            version("payload-signing-client", "0.0.1")
             version("opentelemetry-mdc", "2.24.0-alpha")
             version("opentelemetry-extension-kotlin", "1.58.0")
 
@@ -80,7 +79,6 @@ dependencyResolutionManagement {
             library("token-validation-ktor-v3", "no.nav.security", "token-validation-ktor-v3").versionRef("token-validation-ktor")
 
             library("edi-adapter-client", "no.nav.helsemelding", "edi-adapter-client").versionRef("edi-adapter-client")
-            library("payload-signing-client", "no.nav.helsemelding", "payload-signing-client").versionRef("payload-signing-client")
 
             library("opentelemetry-logback-mdc", "io.opentelemetry.instrumentation", "opentelemetry-logback-mdc-1.0").versionRef("opentelemetry-mdc")
             library("opentelemetry-extension-kotlin", "io.opentelemetry", "opentelemetry-extension-kotlin").versionRef("opentelemetry-extension-kotlin")

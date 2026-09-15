@@ -8,22 +8,16 @@ import io.kotest.matchers.equality.shouldBeEqualUsingFields
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
-import io.ktor.http.HttpStatusCode
 import no.nav.helsemelding.ediadapter.model.ErrorMessage
 import no.nav.helsemelding.ediadapter.model.Metadata
 import no.nav.helsemelding.outbound.EdiAdapterError.SendFailure
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
-import no.nav.helsemelding.outbound.FakePayloadSigningClient
 import no.nav.helsemelding.outbound.LifecycleError.EdiFailure
 import no.nav.helsemelding.outbound.LifecycleError.PersistenceFailure
-import no.nav.helsemelding.outbound.LifecycleError.SigningFailure
-import no.nav.helsemelding.outbound.SigningServiceError.SignFailure
 import no.nav.helsemelding.outbound.metrics.FakeMetrics
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.shouldBeLeftOfType
-import no.nav.helsemelding.payloadsigning.model.MessageSigningError
-import no.nav.helsemelding.payloadsigning.model.PayloadResponse
 import java.net.URI
 import kotlin.uuid.Uuid
 
@@ -32,17 +26,14 @@ class MessageLifecycleServiceSpec : StringSpec(
 
         lateinit var messageStateService: FakeTransactionalMessageStateService
         lateinit var ediAdapterClient: FakeEdiAdapterClient
-        lateinit var payloadSigningClient: FakePayloadSigningClient
         lateinit var messageLifecycleService: MessageLifecycleService
 
         beforeEach {
             messageStateService = FakeTransactionalMessageStateService()
             ediAdapterClient = FakeEdiAdapterClient()
-            payloadSigningClient = FakePayloadSigningClient()
             messageLifecycleService = MessageLifecycleOrchestratorService(
                 messageStateService,
                 ediAdapterClient,
-                payloadSigningClient,
                 FakeMetrics()
             )
         }
@@ -71,9 +62,8 @@ class MessageLifecycleServiceSpec : StringSpec(
             registeredMessageSnapshot shouldBeEqualUsingFields messageStateSnapshot
         }
 
-        "create state if payloadSigningClient returns signed payload and ediAdapterClient returns metadata" {
+        "create state if ediAdapterClient returns metadata" {
             val payload = "data".toByteArray()
-            payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
 
             val messageId = Uuid.random()
             val externalRefId = Uuid.random()
@@ -93,9 +83,8 @@ class MessageLifecycleServiceSpec : StringSpec(
             registeredMessageSnapshot shouldBeEqualUsingFields messageStateSnapshot
         }
 
-        "no state created if payloadSigningClient returns signed payload and ediAdapterClient returns metadata, but creating state fails" {
+        "no state created if ediAdapterClient returns metadata, but creating state fails" {
             val payload = "data".toByteArray()
-            payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
 
             val messageId = Uuid.random()
             val externalRefId = Uuid.random()
@@ -126,9 +115,8 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
         }
 
-        "no state created if payloadSigningClient returns signed payload and ediAdapterClient returns error message" {
+        "no state created if ediAdapterClient returns error message" {
             val payload = "data".toByteArray()
-            payloadSigningClient.givenSignPayload(Right(PayloadResponse(payload)))
 
             val messageId = Uuid.random()
             val errorMessage500 = ErrorMessage(
@@ -145,25 +133,6 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageLifecycleService.registerOutgoingMessage(messageId, payload)
                 .shouldBeLeftOfType<EdiFailure> { lifecycleError ->
                     lifecycleError.cause shouldBeEqualUsingFields SendFailure(messageId, errorMessage500)
-                }
-            messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
-        }
-
-        "no state created if payloadSigningClient returns signing error" {
-            val messageId = Uuid.random()
-            val errorMessage = "Internal Server Error"
-            val messageSigningError = MessageSigningError(
-                HttpStatusCode.InternalServerError.value,
-                errorMessage
-            )
-            payloadSigningClient.givenSignPayload(Left(messageSigningError))
-
-            messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
-
-            val payload = "data".toByteArray()
-            messageLifecycleService.registerOutgoingMessage(messageId, payload)
-                .shouldBeLeftOfType<SigningFailure> { lifecycleError ->
-                    lifecycleError.cause shouldBeEqualUsingFields SignFailure(messageId, messageSigningError)
                 }
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
         }

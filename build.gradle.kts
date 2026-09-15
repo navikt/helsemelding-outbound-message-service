@@ -70,7 +70,6 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.exposed.jdbc)
     implementation(libs.edi.adapter.client)
-    implementation(libs.payload.signing.client)
     implementation(libs.exposed.datetime)
     implementation(libs.hikari)
     implementation(libs.flyway.postgresql)

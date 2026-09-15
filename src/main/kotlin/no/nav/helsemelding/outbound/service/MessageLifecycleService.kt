@@ -11,17 +11,11 @@ import no.nav.helsemelding.ediadapter.model.PostMessageRequest
 import no.nav.helsemelding.outbound.EdiAdapterError.SendFailure
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.LifecycleError.EdiFailure
-import no.nav.helsemelding.outbound.LifecycleError.SigningFailure
-import no.nav.helsemelding.outbound.SigningServiceError.SignFailure
 import no.nav.helsemelding.outbound.metrics.ErrorTypeTag
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
-import no.nav.helsemelding.payloadsigning.client.PayloadSigningClient
-import no.nav.helsemelding.payloadsigning.model.Direction.OUT
-import no.nav.helsemelding.payloadsigning.model.PayloadRequest
-import no.nav.helsemelding.payloadsigning.model.PayloadResponse
 import java.net.URI
 import kotlin.io.encoding.Base64
 import kotlin.system.measureNanoTime
@@ -33,18 +27,18 @@ const val BASE64_ENCODING = "base64"
 
 interface MessageLifecycleService {
     /**
-     * Registers a new outgoing message by signing its payload, sending it to NHN via
-     * the EDI adapter, and initializing its tracked lifecycle state.
+     * Registers a new outgoing message by sending its payload to NHN via the EDI adapter
+     * and initializing its tracked lifecycle state.
      *
      * This operation is **idempotent** with respect to [lifecycleId]:
      *
      * * If a message with the given [lifecycleId] has **not** been registered,
-     * the payload is signed, sent to the external system, and the resulting
+     * the payload is sent to the external system, and the resulting
      * external reference and URL are persisted as the initial lifecycle state.
      *
      * * If a message with the given [lifecycleId] has **already been registered**,
      * the existing [MessageStateSnapshot] is returned and **no side effects**
-     * are performed (no signing, no external call, no state re-initialization).
+     * are performed (no external call, no state re-initialization).
      *
      * This guarantees that repeated invocations (e.g. due to retries, message
      * reprocessing, or duplicate production) will not result in duplicate external
@@ -52,7 +46,7 @@ interface MessageLifecycleService {
      *
      * @param lifecycleId The internal unique identifier for this message. `Acts as the idempotency key.`
      *
-     * @param payload The raw XML payload to sign and send.
+     * @param payload The XML payload to send.
      *
      * @return [Either]:
      *  - `Right(MessageStateSnapshot)` containing the existing or newly created state, or
@@ -67,7 +61,6 @@ interface MessageLifecycleService {
 class MessageLifecycleOrchestratorService(
     private val messageStateService: MessageStateService,
     private val ediAdapterClient: EdiAdapterClient,
-    private val payloadSigningClient: PayloadSigningClient,
     private val metrics: Metrics
 ) : MessageLifecycleService {
 
@@ -86,31 +79,9 @@ class MessageLifecycleOrchestratorService(
         lifecycleId: Uuid,
         payload: ByteArray
     ): Either<LifecycleError, MessageStateSnapshot> = either {
-        val signedXml = signXml(lifecycleId, payload).bind()
-        val metadata = sendMessage(lifecycleId, signedXml).bind()
+        val metadata = sendMessage(lifecycleId, payload).bind()
         initializeState(metadata, lifecycleId).bind()
     }
-
-    private suspend fun signXml(
-        lifecycleId: Uuid,
-        payload: ByteArray
-    ): Either<LifecycleError, ByteArray> = either {
-        log.info { "messageId=$lifecycleId Processing started" }
-
-        var payloadResponse: PayloadResponse
-        val durationNanos = measureNanoTime {
-            payloadResponse = payloadSigningClient.signPayload(PayloadRequest(OUT, payload)).bind()
-        }
-        metrics.registerMessageSigningDuration(durationNanos)
-
-        log.info { "messageId=$lifecycleId Successfully signed" }
-        payloadResponse.bytes
-    }
-        .mapLeft { SigningFailure(SignFailure(lifecycleId, it)) }
-        .onLeft { messageSigningError ->
-            log.error { "messageId=$lifecycleId Failed signing message: $messageSigningError" }
-            metrics.registerOutgoingMessageFailed(ErrorTypeTag.PAYLOAD_SIGNING_FAILED)
-        }
 
     private suspend fun sendMessage(lifecycleId: Uuid, payload: ByteArray): Either<LifecycleError, Metadata> = either {
         val postMessageRequest = PostMessageRequest(

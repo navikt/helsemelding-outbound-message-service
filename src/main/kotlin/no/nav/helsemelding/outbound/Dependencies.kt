@@ -14,23 +14,18 @@ import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.client.HttpEdiAdapterClient
 import no.nav.helsemelding.outbound.config.EdiAdapter
 import no.nav.helsemelding.outbound.config.Kafka
-import no.nav.helsemelding.outbound.config.PayloadSigning
-import no.nav.helsemelding.payloadsigning.client.HttpPayloadSigningClient
-import no.nav.helsemelding.payloadsigning.client.PayloadSigningClient
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.output.MigrateResult
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import no.nav.helsemelding.ediadapter.client.scopedAuthHttpClient as ediScopedAuthHttpClient
 import no.nav.helsemelding.outbound.config.Database as DatabaseConfig
-import no.nav.helsemelding.payloadsigning.client.scopedAuthHttpClient as payloadScopedAuthHttpClient
 
 private val log = KotlinLogging.logger {}
 
 data class Dependencies(
     val database: Database,
     val ediAdapterClient: EdiAdapterClient,
-    val payloadSigningClient: PayloadSigningClient,
     val meterRegistry: PrometheusMeterRegistry,
     val kafkaReceiver: KafkaReceiver<String, ByteArray>,
     val kafkaPublisher: KafkaPublisher<String, ByteArray>
@@ -44,11 +39,6 @@ internal suspend fun ResourceScope.metricsRegistry(): PrometheusMeterRegistry =
 internal suspend fun ResourceScope.ediAdapterClient(ediAdapter: EdiAdapter): EdiAdapterClient =
     install({ HttpEdiAdapterClient(ediScopedAuthHttpClient(ediAdapter.scope.value)) }) { p, _: ExitCase ->
         p.close().also { log.info { "Closed edi adapter client" } }
-    }
-
-internal suspend fun ResourceScope.payloadSigningClient(payloadSigning: PayloadSigning): PayloadSigningClient =
-    install({ HttpPayloadSigningClient(payloadScopedAuthHttpClient(payloadSigning.scope.value)) }) { p, _: ExitCase ->
-        p.close().also { log.info { "Closed payload signing client" } }
     }
 
 internal suspend fun ResourceScope.kafkaPublisher(kafka: Kafka): KafkaPublisher<String, ByteArray> =
@@ -84,14 +74,12 @@ suspend fun ResourceScope.dependencies(): Dependencies = awaitAll {
     val kafkaPublisher = async { kafkaPublisher(config.kafka) }
     val dataSource = async { dataSource(config.database) }
     val ediAdapterClient = async { ediAdapterClient(config.ediAdapter) }
-    val payloadSigningClient = async { payloadSigningClient(config.payloadSigning) }
     val database = async { database(config.database, dataSource.await()) }
     val kafkaReceiver = kafkaReceiver(config.kafka, AutoOffsetReset.Latest)
 
     Dependencies(
         database.await(),
         ediAdapterClient.await(),
-        payloadSigningClient.await(),
         metricsRegistry.await(),
         kafkaReceiver,
         kafkaPublisher.await()
