@@ -2,6 +2,7 @@ package no.nav.helsemelding.outbound
 
 import arrow.continuations.SuspendApp
 import arrow.continuations.ktor.server
+import arrow.core.raise.Raise
 import arrow.core.raise.result
 import arrow.fx.coroutines.resourceScope
 import arrow.resilience.Schedule
@@ -13,6 +14,10 @@ import io.ktor.utils.io.CancellationException
 import io.micrometer.prometheus.PrometheusMeterRegistry
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
+import no.nav.helsemelding.ediadapter.model.v3.MshConfiguration
+import no.nav.helsemelding.ediadapter.model.v3.ReceiveNotificationChannel.API
+import no.nav.helsemelding.ediadapter.model.v3.SetMshConfigurationsRequest
 import no.nav.helsemelding.outbound.evaluator.AppRecTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.StateTransitionEvaluator
 import no.nav.helsemelding.outbound.evaluator.TransportStatusTranslator
@@ -43,6 +48,12 @@ fun main() = SuspendApp {
     result {
         resourceScope {
             val deps = dependencies()
+
+            setMshConfiguration(
+                deps.ediAdapterClient,
+                config().ediAdapter.senderHerId.value
+            )
+
             val metrics = CustomMetrics(deps.meterRegistry)
 
             val scope = coroutineScope(coroutineContext)
@@ -87,16 +98,31 @@ fun main() = SuspendApp {
             awaitCancellation()
         }
     }
-        .onFailure { error -> if (error !is CancellationException) logError(error) }
+        .onFailure { e -> if (e !is CancellationException) log.error(e) { "Shutdown outbound message service" } }
 }
 
 internal fun stateServiceModule(
     meterRegistry: PrometheusMeterRegistry
-): Application.() -> Unit {
-    return {
-        configureMetrics(meterRegistry)
-        configureRoutes(meterRegistry)
-    }
+): Application.() -> Unit = {
+    configureMetrics(meterRegistry)
+    configureRoutes(meterRegistry)
+}
+
+private suspend fun Raise<Throwable>.setMshConfiguration(ediAdapterClient: EdiAdapterClient, senderHerId: Int) {
+    ediAdapterClient.setMshConfigurations(
+        SetMshConfigurationsRequest(
+            listOf(
+                MshConfiguration(
+                    herId = senderHerId,
+                    receiveNotificationChannel = API
+                )
+            )
+        )
+    )
+        .mapLeft { MshConfigurationException("Unable to configure MSH: $it") }
+        .bind()
+
+    log.info { "MSH configured for herId: $senderHerId (notificationChannel: $API)" }
 }
 
 private suspend fun schedulePoller(pollerService: PollerService): Long {
@@ -111,9 +137,7 @@ private suspend fun scheduleMetricsRefreshing(
 ): Long {
     return Schedule
         .spaced<Unit>(config().metrics.metricsUpdatingInterval)
-        .repeat {
-            refreshMetrics(metricsService, metrics)
-        }
+        .repeat { refreshMetrics(metricsService, metrics) }
 }
 
 private suspend fun refreshMetrics(metricsService: MetricsService, metrics: Metrics) {
@@ -126,8 +150,6 @@ private suspend fun refreshMetrics(metricsService: MetricsService, metrics: Metr
     val deliveryStateCounts = metricsService.countByMessageDeliveryState()
     metrics.registerMessageDeliveryStateDistribution(deliveryStateCounts)
 }
-
-private fun logError(t: Throwable) = log.error { "Shutdown state-service due to: ${t.stackTraceToString()}" }
 
 private fun stateEvaluatorService(): StateEvaluatorService =
     StateEvaluatorService(
@@ -167,3 +189,5 @@ private fun messageReceiver(
         config().kafka.topics.dialogMessageOut,
         kafkaReceiver
     )
+
+private class MshConfigurationException(message: String) : RuntimeException(message)
