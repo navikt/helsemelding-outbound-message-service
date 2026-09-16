@@ -1,13 +1,17 @@
 package no.nav.helsemelding.outbound.service
 
 import arrow.core.Either
+import arrow.core.raise.Raise
 import arrow.core.raise.either
+import arrow.core.raise.ensureNotNull
 import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
-import no.nav.helsemelding.ediadapter.model.Metadata
-import no.nav.helsemelding.ediadapter.model.PostMessageRequest
+import no.nav.helsemelding.ediadapter.model.v3.PostMessageRequest
+import no.nav.helsemelding.messageconverter.MetadataExtractor
+import no.nav.helsemelding.messageconverter.MsgHeadMessageConverter
+import no.nav.helsemelding.messageconverter.model.MessageMetadata
 import no.nav.helsemelding.outbound.EdiAdapterError.SendFailure
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.LifecycleError.EdiFailure
@@ -16,41 +20,22 @@ import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
-import java.net.URI
 import kotlin.io.encoding.Base64
-import kotlin.system.measureNanoTime
+import kotlin.time.measureTimedValue
 import kotlin.uuid.Uuid
 
 private val log = KotlinLogging.logger {}
 
-const val BASE64_ENCODING = "base64"
+private const val BASE64_ENCODING = "base64"
 
 interface MessageLifecycleService {
     /**
-     * Registers a new outgoing message by sending its payload to NHN via the EDI adapter
-     * and initializing its tracked lifecycle state.
+     * Extracts metadata from [payload], sends the XML through the EDI adapter,
+     * and stores the initial lifecycle state under [lifecycleId].
      *
-     * This operation is **idempotent** with respect to [lifecycleId]:
-     *
-     * * If a message with the given [lifecycleId] has **not** been registered,
-     * the payload is sent to the external system, and the resulting
-     * external reference and URL are persisted as the initial lifecycle state.
-     *
-     * * If a message with the given [lifecycleId] has **already been registered**,
-     * the existing [MessageStateSnapshot] is returned and **no side effects**
-     * are performed (no external call, no state re-initialization).
-     *
-     * This guarantees that repeated invocations (e.g. due to retries, message
-     * reprocessing, or duplicate production) will not result in duplicate external
-     * messages being created.
-     *
-     * @param lifecycleId The internal unique identifier for this message. `Acts as the idempotency key.`
-     *
-     * @param payload The XML payload to send.
-     *
-     * @return [Either]:
-     *  - `Right(MessageStateSnapshot)` containing the existing or newly created state, or
-     *  - `Left(LifecycleError)` if a lifecycle constraint is violated or persistence fails.
+     * Returns an existing snapshot without sending again when [lifecycleId] is already stored.
+     * Sending and persistence are not atomic: concurrent registrations or retries after
+     * a successful send followed by failed persistence may send the message again.
      */
     suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
@@ -61,71 +46,102 @@ interface MessageLifecycleService {
 class MessageLifecycleOrchestratorService(
     private val messageStateService: MessageStateService,
     private val ediAdapterClient: EdiAdapterClient,
-    private val metrics: Metrics
+    private val metrics: Metrics,
+    private val metadataExtractor: MetadataExtractor = MsgHeadMessageConverter()
 ) : MessageLifecycleService {
 
     override suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
         payload: ByteArray
-    ): Either<LifecycleError, MessageStateSnapshot> {
-        return messageStateService
-            .getMessageSnapshotById(lifecycleId)
-            ?.also { log.debug { "Lifecycle id: $lifecycleId already exists - idempotent handling triggered" } }
+    ): Either<LifecycleError, MessageStateSnapshot> =
+        messageStateService.getMessageSnapshotById(lifecycleId)
+            ?.also { logExistingState(lifecycleId) }
             ?.right()
             ?: registerNewMessage(lifecycleId, payload)
-    }
 
     private suspend fun registerNewMessage(
         lifecycleId: Uuid,
         payload: ByteArray
     ): Either<LifecycleError, MessageStateSnapshot> = either {
-        val metadata = sendMessage(lifecycleId, payload).bind()
-        initializeState(metadata, lifecycleId).bind()
+        val metadata = extractMetadata(lifecycleId, payload)
+        val externalRefId = sendMessage(lifecycleId, metadata.toRequest(payload))
+        initializeState(lifecycleId, externalRefId)
     }
+        .onLeft { reportFailure(lifecycleId, it) }
 
-    private suspend fun sendMessage(lifecycleId: Uuid, payload: ByteArray): Either<LifecycleError, Metadata> = either {
-        val postMessageRequest = PostMessageRequest(
+    private fun Raise<LifecycleError>.extractMetadata(
+        lifecycleId: Uuid,
+        payload: ByteArray
+    ): MessageMetadata =
+        metadataExtractor.extractMetadata(payload.decodeToString())
+            .mapLeft { LifecycleError.MetadataExtractionFailure(lifecycleId, it) }
+            .bind()
+
+    private fun MessageMetadata.toRequest(payload: ByteArray): PostMessageRequest =
+        PostMessageRequest(
             businessDocument = Base64.encode(payload),
             contentType = ContentType.Application.Xml.toString(),
-            contentTransferEncoding = BASE64_ENCODING
+            contentTransferEncoding = BASE64_ENCODING,
+            senderHerId = senderHerId,
+            receiverHerIds = receiverHerIds,
+            messageTypeIdentificator = messageTypeIdentificator
         )
 
-        var metadata: Metadata
-        val durationNanos = measureNanoTime {
-            metadata = ediAdapterClient.postMessage(postMessageRequest).bind()
+    private suspend fun Raise<LifecycleError>.sendMessage(
+        lifecycleId: Uuid,
+        request: PostMessageRequest
+    ): Uuid {
+        val (response, duration) = measureTimedValue {
+            ediAdapterClient.postMessage(request)
+                .mapLeft { EdiFailure(SendFailure(lifecycleId, it)) }
+                .bind()
         }
-        metrics.registerPostMessageDuration(durationNanos)
-        val externalRefId = metadata.id
-        log.info {
-            "externalRefId=$externalRefId Successfully sent message (messageId=$lifecycleId) to edi adapter"
-        }
-        metadata
-    }
-        .mapLeft { EdiFailure(SendFailure(lifecycleId, it)) }
-        .onLeft { error ->
-            log.error { "messageId=$lifecycleId Failed sending message to edi adapter: $error" }
-            metrics.registerOutgoingMessageFailed(ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED)
-        }
+        metrics.registerPostMessageDuration(duration.inWholeNanoseconds)
 
-    private suspend fun initializeState(
-        metadata: Metadata,
-        messageId: Uuid
-    ): Either<LifecycleError, MessageStateSnapshot> = either {
-        val snapshot = messageStateService.createInitialState(
+        val responseId = ensureNotNull(response.id) {
+            LifecycleError.MissingExternalReferenceId(lifecycleId)
+        }
+        return ensureNotNull(Uuid.parseOrNull(responseId)) {
+            LifecycleError.InvalidExternalReferenceId(lifecycleId, responseId)
+        }
+            .also { logMessageSent(lifecycleId, it) }
+    }
+
+    private suspend fun Raise<LifecycleError>.initializeState(
+        lifecycleId: Uuid,
+        externalRefId: Uuid
+    ): MessageStateSnapshot =
+        messageStateService.createInitialState(
             CreateState(
-                id = messageId,
-                externalRefId = metadata.id,
-                messageType = DIALOG,
-                externalMessageUrl = URI.create(metadata.location).toURL()
+                id = lifecycleId,
+                externalRefId = externalRefId,
+                messageType = DIALOG
             )
         )
             .bind()
-        val externalRefId = snapshot.messageState.externalRefId
-        log.info { "externalRefId=$externalRefId State initialized (messageId=$messageId)" }
-        snapshot
+            .also { logStateInitialized(lifecycleId, externalRefId) }
+
+    private fun logExistingState(lifecycleId: Uuid) {
+        log.debug { "messageId=$lifecycleId Returning existing lifecycle state" }
     }
-        .onLeft { lifecycleError ->
-            log.error { "messageId=$messageId Failed initializing state: $lifecycleError" }
-            metrics.registerOutgoingMessageFailed(ErrorTypeTag.STATE_INITIALIZATION_FAILED)
+
+    private fun logMessageSent(lifecycleId: Uuid, externalRefId: Uuid) {
+        log.info { "messageId=$lifecycleId externalRefId=$externalRefId Successfully sent message to edi adapter" }
+    }
+
+    private fun logStateInitialized(lifecycleId: Uuid, externalRefId: Uuid) {
+        log.info { "messageId=$lifecycleId externalRefId=$externalRefId State initialized" }
+    }
+
+    private fun reportFailure(lifecycleId: Uuid, error: LifecycleError) {
+        val errorType = when (error) {
+            is LifecycleError.MetadataExtractionFailure -> ErrorTypeTag.METADATA_EXTRACTION_FAILED
+            is EdiFailure -> ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED
+            is LifecycleError.MissingExternalReferenceId,
+            is LifecycleError.InvalidExternalReferenceId -> ErrorTypeTag.EXTERNAL_REFERENCE_VALIDATION_FAILED
+            is LifecycleError.Conflict, is LifecycleError.PersistenceFailure -> ErrorTypeTag.STATE_INITIALIZATION_FAILED
         }
+        log.error { "messageId=$lifecycleId Failed registering message ($errorType): $error" }
+        metrics.registerOutgoingMessageFailed(errorType)
+    }
 }

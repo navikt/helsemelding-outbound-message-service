@@ -6,5 +6,6 @@ import kotlinx.serialization.Serializable
 data class AppRecErrorMessage(
     val code: String? = null,
     val description: String? = null,
-    val oid: String? = null
+    val oid: String? = null,
+    val details: String? = null
 )

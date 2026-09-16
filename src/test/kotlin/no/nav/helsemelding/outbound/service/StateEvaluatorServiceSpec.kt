@@ -24,7 +24,6 @@ import no.nav.helsemelding.outbound.model.NextStateDecision.Transition
 import no.nav.helsemelding.outbound.model.NextStateDecision.Unchanged
 import no.nav.helsemelding.outbound.model.TransportStatus
 import no.nav.helsemelding.outbound.shouldBeLeftWhere
-import java.net.URI
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
@@ -51,7 +50,6 @@ class StateEvaluatorServiceSpec : StringSpec(
             id = Uuid.random(),
             messageType = DIALOG,
             externalRefId = Uuid.random(),
-            externalMessageUrl = URI.create("http://localhost").toURL(),
             lastStateChange = Clock.System.now(),
             lastPolledAt = null,
             createdAt = Clock.System.now(),

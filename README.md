@@ -193,7 +193,6 @@ It consists of a **rich domain model** stored in two tables: a *current state ta
 Each message tracked in the system has a single **current state record**, which stores:
 
 - the external reference ID (UUID from the external system)
-- the external message URL (link to the resource in the external system)
 - the latest resolved domain state (`MessageDeliveryState`)
 - the raw external data:
    - `ExternalDeliveryState?`

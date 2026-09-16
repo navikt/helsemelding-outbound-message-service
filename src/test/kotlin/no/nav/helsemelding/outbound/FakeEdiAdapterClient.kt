@@ -3,151 +3,69 @@ package no.nav.helsemelding.outbound
 import arrow.core.Either
 import arrow.core.Either.Left
 import arrow.core.Either.Right
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
-import no.nav.helsemelding.ediadapter.client.ExperimentalEdiAdapterApi
-import no.nav.helsemelding.ediadapter.model.AppRecStatus
-import no.nav.helsemelding.ediadapter.model.ApprecInfo
-import no.nav.helsemelding.ediadapter.model.DeliveryState
-import no.nav.helsemelding.ediadapter.model.ErrorMessage
-import no.nav.helsemelding.ediadapter.model.GetBusinessDocumentResponse
-import no.nav.helsemelding.ediadapter.model.GetMessagesRequest
-import no.nav.helsemelding.ediadapter.model.GetNoticesRequest
-import no.nav.helsemelding.ediadapter.model.Message
-import no.nav.helsemelding.ediadapter.model.Metadata
-import no.nav.helsemelding.ediadapter.model.Notice
-import no.nav.helsemelding.ediadapter.model.PostAppRecRequest
-import no.nav.helsemelding.ediadapter.model.PostMessageRequest
-import no.nav.helsemelding.ediadapter.model.PostMshConfigurationRequest
-import no.nav.helsemelding.ediadapter.model.StatusInfo
+import no.nav.helsemelding.ediadapter.client.EdiAdapterError
+import no.nav.helsemelding.ediadapter.model.common.GetBusinessDocumentResponse
+import no.nav.helsemelding.ediadapter.model.v3.AppRecStatus
+import no.nav.helsemelding.ediadapter.model.v3.ApprecInfo
+import no.nav.helsemelding.ediadapter.model.v3.DeliveryState
+import no.nav.helsemelding.ediadapter.model.v3.GetMessageResponse
+import no.nav.helsemelding.ediadapter.model.v3.GetNotificationsResponse
+import no.nav.helsemelding.ediadapter.model.v3.GetStatusResponse
+import no.nav.helsemelding.ediadapter.model.v3.MarkAsDownloadedRequest
+import no.nav.helsemelding.ediadapter.model.v3.Notification
+import no.nav.helsemelding.ediadapter.model.v3.PingResponse
+import no.nav.helsemelding.ediadapter.model.v3.PostAppRecRequest
+import no.nav.helsemelding.ediadapter.model.v3.PostApprecResponse
+import no.nav.helsemelding.ediadapter.model.v3.PostMessageRequest
+import no.nav.helsemelding.ediadapter.model.v3.PostMessageResponse
+import no.nav.helsemelding.ediadapter.model.v3.SetMshConfigurationsRequest
+import no.nav.helsemelding.ediadapter.model.v3.StatusInfo
 import kotlin.uuid.Uuid
 
 class FakeEdiAdapterClient : EdiAdapterClient {
-    private val messageStatusById = mutableMapOf<Uuid, Either<ErrorMessage, List<StatusInfo>>>()
-    private val messageById = mutableMapOf<Uuid, Either<ErrorMessage, Message>>()
-    private val businessDocumentById = mutableMapOf<Uuid, Either<ErrorMessage, GetBusinessDocumentResponse>>()
-    private val postApprecById = mutableMapOf<Uuid, Either<ErrorMessage, Metadata>>()
-    private val markAsReadById = mutableMapOf<Uuid, Either<ErrorMessage, Boolean>>()
-    private val apprecInfoById = mutableMapOf<Uuid, Either<ErrorMessage, List<ApprecInfo>>>()
-    private val postMessages = ArrayDeque<Either<ErrorMessage, Metadata>>()
+    private val statuses = mutableMapOf<Uuid, Either<EdiAdapterError, GetStatusResponse>>()
+    private val postMessages = ArrayDeque<Either<EdiAdapterError, PostMessageResponse>>()
+    val statusRequests = mutableListOf<Uuid>()
+    val sentMessages = mutableListOf<PostMessageRequest>()
+    val errorMessage404 = EdiAdapterError.Api(404)
 
-    val errorMessage404 = ErrorMessage(
-        error = "Not Found",
-        errorCode = 1000,
-        requestId = Uuid.random().toString()
-    )
-
-    fun givenStatus(
-        id: Uuid,
-        deliveryState: DeliveryState,
-        appRecStatus: AppRecStatus?
-    ) {
-        messageStatusById[id] = Right(
-            listOf(
-                StatusInfo(
-                    transportDeliveryState = deliveryState,
-                    appRecStatus = appRecStatus,
-                    receiverHerId = 1,
-                    sent = true
-                )
-            )
-        )
+    fun givenStatus(id: Uuid, deliveryState: DeliveryState, appRecStatus: AppRecStatus?) {
+        givenStatusList(id, listOf(StatusInfo(8142520, deliveryState, true, appRecStatus?.let { ApprecInfo(it) })))
     }
 
-    fun givenStatusList(
-        id: Uuid,
-        list: List<StatusInfo>?
-    ) {
-        messageStatusById[id] = Right(list ?: emptyList())
+    fun givenStatusList(id: Uuid, list: List<StatusInfo>?) {
+        statuses[id] = Right(GetStatusResponse(list))
     }
 
-    fun givenStatusError(
-        id: Uuid,
-        error: ErrorMessage
-    ) {
-        messageStatusById[id] = Left(error)
+    fun givenStatusError(id: Uuid, error: EdiAdapterError) {
+        statuses[id] = Left(error)
     }
 
-    fun givenMessage(
-        id: Uuid,
-        message: Message
-    ) {
-        messageById[id] = Right(message)
-    }
-
-    fun givenPostMessage(
-        message: Either<ErrorMessage, Metadata>
-    ) {
+    fun givenPostMessage(message: Either<EdiAdapterError, PostMessageResponse>) {
         postMessages.add(message)
     }
 
-    fun givenApprecInfo(
-        id: Uuid,
-        info: List<ApprecInfo>
-    ) {
-        apprecInfoById[id] = Right(info)
+    override suspend fun getMessageStatus(id: Uuid): Either<EdiAdapterError, GetStatusResponse> {
+        statusRequests.add(id)
+        return statuses[id] ?: Right(GetStatusResponse())
     }
 
-    fun givenApprecInfoSingle(
-        id: Uuid,
-        info: ApprecInfo
-    ) {
-        apprecInfoById[id] = Right(listOf(info))
+    override suspend fun postMessage(request: PostMessageRequest): Either<EdiAdapterError, PostMessageResponse> {
+        sentMessages.add(request)
+        return postMessages.removeFirstOrNull() ?: Left(errorMessage404)
     }
 
-    fun givenApprecInfoEmpty(
-        id: Uuid
-    ) {
-        apprecInfoById[id] = Right(emptyList())
-    }
-
-    fun givenApprecInfoError(
-        id: Uuid,
-        error: ErrorMessage
-    ) {
-        apprecInfoById[id] = Left(error)
-    }
-
-    override suspend fun getMessageStatus(
-        id: Uuid
-    ): Either<ErrorMessage, List<StatusInfo>> =
-        messageStatusById[id] ?: Right(emptyList())
-
-    override suspend fun getMessage(
-        id: Uuid
-    ): Either<ErrorMessage, Message> =
-        messageById[id] ?: Left(errorMessage404)
-
-    override suspend fun getBusinessDocument(
-        id: Uuid
-    ): Either<ErrorMessage, GetBusinessDocumentResponse> =
-        businessDocumentById[id] ?: Left(errorMessage404)
-
-    override suspend fun postApprec(
-        id: Uuid,
-        apprecSenderHerId: Int,
-        postAppRecRequest: PostAppRecRequest
-    ): Either<ErrorMessage, Metadata> =
-        postApprecById[id] ?: Left(errorMessage404)
-
-    override suspend fun markMessageAsRead(
-        id: Uuid,
-        herId: Int
-    ): Either<ErrorMessage, Boolean> =
-        markAsReadById[id] ?: Right(true)
-
-    override suspend fun getApprecInfo(id: Uuid): Either<ErrorMessage, List<ApprecInfo>> =
-        apprecInfoById[id] ?: Right(emptyList())
-
-    override suspend fun getMessages(getMessagesRequest: GetMessagesRequest) = Right(emptyList<Message>())
-
-    override suspend fun postMessage(postMessagesRequest: PostMessageRequest): Either<ErrorMessage, Metadata> =
-        postMessages.removeFirstOrNull() ?: Left(errorMessage404)
-
-    @ExperimentalEdiAdapterApi
-    override suspend fun postMshConfiguration(postMshConfigurationRequest: PostMshConfigurationRequest): Either<ErrorMessage, Unit> = Left(errorMessage404)
-
-    @ExperimentalEdiAdapterApi
-    override suspend fun getNotices(getNoticesRequest: GetNoticesRequest): Either<ErrorMessage, List<Notice>> = Left(errorMessage404)
-
+    override suspend fun getMessage(id: Uuid): Either<EdiAdapterError, GetMessageResponse> = Left(errorMessage404)
+    override suspend fun getBusinessDocument(id: Uuid): Either<EdiAdapterError, GetBusinessDocumentResponse> = Left(errorMessage404)
+    override suspend fun postApprec(id: Uuid, request: PostAppRecRequest): Either<EdiAdapterError, PostApprecResponse> = Left(errorMessage404)
+    override suspend fun markMessageAsDownloaded(id: Uuid, request: MarkAsDownloadedRequest): Either<EdiAdapterError, Unit> = Left(errorMessage404)
+    override suspend fun getNotifications(herIds: List<Int>, offset: Int, notificationsToFetch: Int?): Either<EdiAdapterError, GetNotificationsResponse> = Right(GetNotificationsResponse(emptyList()))
+    override fun streamNotifications(herIds: List<Int>, offset: Int?): Flow<Either<EdiAdapterError, Notification>> = emptyFlow()
+    override suspend fun setMshConfigurations(request: SetMshConfigurationsRequest): Either<EdiAdapterError, Unit> = Left(errorMessage404)
+    override suspend fun deleteMshConfigurations(herIds: List<Int>): Either<EdiAdapterError, Unit> = Left(errorMessage404)
+    override suspend fun ping(): Either<EdiAdapterError, PingResponse> = Left(errorMessage404)
     override fun close() {}
 }

@@ -20,17 +20,16 @@ interface MessageStateService {
      *
      * This function persists the initial lifecycle state for an incoming message once the external
      * adapter has confirmed that the message has been successfully created in the external system
-     * (i.e., an external reference ID and external message URL have been assigned).
+     * (i.e., an external reference ID has been assigned).
      *
      * The call enforces all lifecycle- and uniqueness constraints:
      * - If the lifecycle ID (`createState.id`) already exists with identical external data
-     *   (external reference ID + external message URL), the operation is **idempotent** and the
+     *   (external reference ID), the operation is **idempotent** and the
      *   existing message state is returned.
      * - If the lifecycle ID already exists but with conflicting external data, the operation
      *   fails with [LifecycleError.ConflictingLifecycleId].
-     * - If the external reference ID or external message URL is already associated with a different
-     *   lifecycle ID, the operation fails with [LifecycleError.ConflictingExternalReferenceId] or
-     *   [LifecycleError.ConflictingExternalMessageUrl].
+     * - If the external reference ID is already associated with a different
+     *   lifecycle ID, the operation fails with [LifecycleError.ConflictingExternalReferenceId].
      *
      * Upon successful creation (or idempotent reuse), an initial history entry is also appended so
      * that the message lifecycle begins from a well-defined and traceable starting point.
@@ -42,7 +41,6 @@ interface MessageStateService {
      *   - lifecycle message ID
      *   - external reference ID
      *   - message type
-     *   - external message URL
      *   - creation timestamp
      *
      * @return Either:
@@ -61,8 +59,7 @@ interface MessageStateService {
      * currently stored values, the message is updated and a new history entry is recorded.
      *
      * Both tracked aspects of external state may change independently — the transport-level
-     * delivery state and the application-level receipt status. The external message URL
-     * remains immutable and is not modified.
+     * delivery state and the application-level receipt status.
      *
      * The operation is transactional — the message update and its corresponding history
      * entry are committed atomically to ensure consistency.
