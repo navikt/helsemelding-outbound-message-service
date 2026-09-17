@@ -3,7 +3,6 @@ package no.nav.helsemelding.outbound.repository
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.MessageStateChange
-import no.nav.helsemelding.outbound.util.UuidTransformer
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.eq
@@ -16,11 +15,10 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 object MessageStateHistory : Table("message_state_history") {
-    val id = uuid("id").transform(UuidTransformer())
+    val id = uuid("id")
     override val primaryKey = PrimaryKey(id)
 
     val messageId = uuid("message_id")
-        .transform(UuidTransformer())
         .references(Messages.id)
 
     val oldDeliveryState = enumerationByName("old_delivery_state", 100, ExternalDeliveryState::class)
