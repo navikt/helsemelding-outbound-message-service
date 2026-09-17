@@ -19,7 +19,6 @@ import no.nav.helsemelding.outbound.model.isUnconfirmed
 import no.nav.helsemelding.outbound.repository.Messages.appRecStatus
 import no.nav.helsemelding.outbound.repository.Messages.externalDeliveryState
 import no.nav.helsemelding.outbound.repository.Messages.lastPolledAt
-import no.nav.helsemelding.outbound.util.UuidTransformer
 import no.nav.helsemelding.outbound.util.olderThanSeconds
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder.ASC_NULLS_FIRST
@@ -44,11 +43,10 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 object Messages : Table("messages") {
-    val id = uuid("id").transform(UuidTransformer())
+    val id = uuid("id")
     override val primaryKey = PrimaryKey(id)
 
     val externalRefId = uuid("external_reference_id")
-        .transform(UuidTransformer())
         .uniqueIndex()
 
     val messageType = enumerationByName("message_type", 100, MessageType::class)
