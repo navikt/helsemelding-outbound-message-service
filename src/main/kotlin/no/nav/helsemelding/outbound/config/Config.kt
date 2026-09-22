@@ -16,7 +16,6 @@ import kotlin.time.Duration
 data class Config(
     val kafka: Kafka,
     val server: Server,
-    val poller: Poller,
     val metrics: Metrics,
     val database: Database,
     val ediAdapter: EdiAdapter
@@ -115,13 +114,6 @@ data class EdiAdapter(
     @JvmInline
     value class SenderHerId(val value: Int)
 }
-
-data class Poller(
-    val fetchLimit: Int,
-    val batchSize: Int,
-    val minAgeSeconds: Duration,
-    val scheduleInterval: Duration
-)
 
 data class Metrics(
     val metricsUpdatingInterval: Duration

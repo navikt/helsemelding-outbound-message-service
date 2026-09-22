@@ -11,7 +11,6 @@ data class MessageState(
     val externalDeliveryState: ExternalDeliveryState?,
     val appRecStatus: AppRecStatus?,
     val lastStateChange: Instant,
-    val lastPolledAt: Instant?,
     val createdAt: Instant,
     val updatedAt: Instant
 )

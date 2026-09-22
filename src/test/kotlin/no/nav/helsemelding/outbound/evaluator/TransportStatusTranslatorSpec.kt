@@ -24,6 +24,10 @@ class TransportStatusTranslatorSpec : StringSpec(
             translator.translate(ExternalDeliveryState.ACKNOWLEDGED).isAcknowledged() shouldBe true
         }
 
+        "ABANDONED → REJECTED" {
+            translator.translate(ExternalDeliveryState.ABANDONED).isRejected() shouldBe true
+        }
+
         "REJECTED → REJECTED" {
             translator.translate(ExternalDeliveryState.REJECTED).isRejected() shouldBe true
         }

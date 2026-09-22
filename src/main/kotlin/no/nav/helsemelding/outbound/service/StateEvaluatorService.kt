@@ -9,8 +9,16 @@ import no.nav.helsemelding.outbound.model.DeliveryEvaluationState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.NextStateDecision
+import no.nav.helsemelding.outbound.model.isTerminal
 import no.nav.helsemelding.outbound.model.resolveDelivery
+import no.nav.helsemelding.outbound.model.toDeliveryState
 
+/**
+ * Combines transport translation, transition validation and delivery state resolution.
+ *
+ * Builds evaluation snapshots from external values, then compares their resolved outcomes
+ * to produce a transition decision. Persistence and publication are handled by the caller.
+ */
 class StateEvaluatorService(
     private val transportTranslator: TransportStatusTranslator,
     private val transitionValidator: StateTransitionEvaluator
@@ -32,6 +40,11 @@ class StateEvaluatorService(
             appRec = appRecStatus
         )
 
+    /**
+     * Validates the transition before comparing resolved outcomes, including the pending reason.
+     * Returns [NextStateDecision.Unchanged] when the outcomes match, or the new state's decision
+     * otherwise. Validation failures are raised through [Raise].
+     */
     fun Raise<StateTransitionError>.determineNextState(
         old: DeliveryEvaluationState,
         new: DeliveryEvaluationState
@@ -47,4 +60,15 @@ class StateEvaluatorService(
                 NextStateDecision.Unchanged
             }
         }
+
+    /**
+     * Identifies messages whose stored values resolve to COMPLETED or REJECTED, so their
+     * notifications can be skipped. INVALID is excluded from this filter, even though the
+     * transition validator only permits INVALID to transition to itself.
+     */
+    fun isTerminal(message: MessageState): Boolean =
+        evaluate(message)
+            .resolveDelivery()
+            .toDeliveryState()
+            .isTerminal()
 }

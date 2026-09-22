@@ -32,10 +32,11 @@ import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateHistoryRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateTransactionRepository
+import no.nav.helsemelding.outbound.repository.ExposedNotificationOffsetRepository
 import no.nav.helsemelding.outbound.service.MessageLifecycleOrchestratorService
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.MetricsService
-import no.nav.helsemelding.outbound.service.PollerService
+import no.nav.helsemelding.outbound.service.NotificationService
 import no.nav.helsemelding.outbound.service.PrometheusMetricsService
 import no.nav.helsemelding.outbound.service.StateEvaluatorService
 import no.nav.helsemelding.outbound.service.TransactionalMessageStateService
@@ -56,13 +57,12 @@ fun main() = SuspendApp {
 
             val metrics = CustomMetrics(deps.meterRegistry)
 
-            val scope = coroutineScope(coroutineContext)
-
-            val poller = PollerService(
+            val notificationService = NotificationService(
                 deps.ediAdapterClient,
                 messageStateService(deps.database),
                 stateEvaluatorService(),
-                StatusMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
+                StatusMessagePublisher(config().kafka.topics, deps.kafkaPublisher),
+                ExposedNotificationOffsetRepository(deps.database)
             )
 
             val messageLifecycleService = MessageLifecycleOrchestratorService(
@@ -84,10 +84,10 @@ fun main() = SuspendApp {
                 module = stateServiceModule(deps.meterRegistry)
             )
 
+            val scope = coroutineScope(coroutineContext)
+
             messageProcessor.processMessages(scope)
-
-            scope.launch { schedulePoller(poller) }
-
+            notificationService.processNotifications(scope)
             scope.launch {
                 scheduleMetricsRefreshing(
                     metricsService(deps.database),
@@ -119,16 +119,10 @@ private suspend fun Raise<Throwable>.setMshConfiguration(ediAdapterClient: EdiAd
             )
         )
     )
-        .mapLeft { MshConfigurationException("Unable to configure MSH: $it") }
+        .mapLeft { error -> MshConfigurationException("Unable to configure MSH: $error") }
         .bind()
 
     log.info { "MSH configured for herId: $senderHerId (notificationChannel: $API)" }
-}
-
-private suspend fun schedulePoller(pollerService: PollerService): Long {
-    return Schedule
-        .spaced<Unit>(config().poller.scheduleInterval)
-        .repeat { pollerService.pollMessages() }
 }
 
 private suspend fun scheduleMetricsRefreshing(

@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldBe
 import no.nav.helsemelding.outbound.container
 import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.CreateState
+import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ABANDONED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.model.UpdateState
@@ -67,6 +68,22 @@ class MessageStateTransactionRepositorySpec : StringSpec(
                 messageStateChange.oldAppRecStatus shouldBe null
                 messageStateChange.newAppRecStatus shouldBe null
                 messageStateChange.changedAt shouldBeInstant now
+            }
+        }
+
+        "ABANDONED is preserved in PostgreSQL current state and history" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+                val messages = ExposedMessageRepository(database)
+                val history = ExposedMessageStateHistoryRepository(database)
+                val transactions = ExposedMessageStateTransactionRepository(database, messages, history)
+                val ref = Uuid.random()
+                transactions.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
+
+                transactions.recordStateChange(UpdateState(ref, DIALOG, null, ABANDONED, null, null))
+
+                messages.findByExternalReferenceId(ref)!!.externalDeliveryState shouldBe ABANDONED
+                history.findAll(ref).single { it.newDeliveryState != null }.newDeliveryState shouldBe ABANDONED
             }
         }
 

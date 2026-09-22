@@ -42,6 +42,12 @@ sealed interface PublishError : StateError {
     ) : PublishError
 }
 
+sealed interface FetchStatusError : StateError {
+    data class FetchFailure(val cause: ClientEdiAdapterError) : FetchStatusError
+
+    data class UnexpectedReceiverCount(val count: Int) : FetchStatusError
+}
+
 sealed interface LifecycleError : StateError {
 
     sealed interface Conflict : LifecycleError

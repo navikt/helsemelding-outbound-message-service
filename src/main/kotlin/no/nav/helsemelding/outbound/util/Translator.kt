@@ -27,7 +27,7 @@ private fun DeliveryState.translate(): ExternalDeliveryState = when (this) {
     DeliveryState.UNCONFIRMED -> ExternalDeliveryState.UNCONFIRMED
     DeliveryState.ACKNOWLEDGED -> ExternalDeliveryState.ACKNOWLEDGED
     DeliveryState.REJECTED -> ExternalDeliveryState.REJECTED
-    DeliveryState.ABANDONED -> ExternalDeliveryState.REJECTED
+    DeliveryState.ABANDONED -> ExternalDeliveryState.ABANDONED
 }
 
 private fun ExternalAppRecStatus.translate(): AppRecStatus =
