@@ -21,7 +21,7 @@ object NotificationOffsets : Table("notification_offset") {
  * Persists the last handled notification offset for each her id so consumption can resume after restart.
  *
  * Offsets are global to the external notification stream and may contain gaps for an individual
- * her id. Each checkpoint identifies a handled notification, rather than a count of notifications.
+ * her id. Each offset identifies a handled notification, rather than a count of notifications.
  */
 interface NotificationOffsetRepository {
     /**
