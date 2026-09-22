@@ -61,10 +61,10 @@ class NotificationServiceSpec : StringSpec(
         val senderHerId = config().ediAdapter.senderHerId.value
 
         "collection resumes from the stored offset and advances after intentional skips" {
-            val offsets = FakeNotificationOffsetRepository()
-            offsets.saveOffset(senderHerId, 100L)
-            offsets.saved.clear()
-            val (client, _, _, service) = fixture(offsets)
+            val notificationOffsetRepository = FakeNotificationOffsetRepository()
+            notificationOffsetRepository.saveOffset(senderHerId, 100L)
+            notificationOffsetRepository.saved.clear()
+            val (client, _, _, service) = fixture(notificationOffsetRepository)
             client.notifications = flowOf(
                 notification(null, NotificationType.NEW_MESSAGE).copy(offset = 110L).right(),
                 notification(null, NotificationType.REFUSED_MESSAGE).copy(offset = 120L).right(),
@@ -75,21 +75,21 @@ class NotificationServiceSpec : StringSpec(
             service.processNotifications(this).join()
 
             client.notificationRequests shouldBe listOf(listOf(senderHerId) to 100L)
-            offsets.saved.map { it.second } shouldBe listOf(110L, 120L, 130L, 140L)
-            val (restartedClient, _, _, restartedService) = fixture(offsets)
+            notificationOffsetRepository.saved.map { it.second } shouldBe listOf(110L, 120L, 130L, 140L)
+            val (restartedClient, _, _, restartedService) = fixture(notificationOffsetRepository)
             restartedService.processNotifications(this).join()
             restartedClient.notificationRequests shouldBe listOf(listOf(senderHerId) to 140L)
         }
 
         "offset is saved after publication and persistence" {
             val (client, states, publisher, service, offsets) = fixture()
-            val ref = Uuid.random()
-            states.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
-            client.givenStatus(ref, DeliveryState.ACKNOWLEDGED, OK)
-            client.notifications = flowOf(notification(ref).right())
+            val externalRefId = Uuid.random()
+            states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
+            client.notifications = flowOf(notification(externalRefId).right())
             offsets.beforeSave = {
                 publisher.published.single().status shouldBe MessageStatus.COMPLETED
-                states.getMessageSnapshotByExternalRefId(ref)!!.messageState.appRecStatus shouldBe AppRecStatus.OK
+                states.getMessageSnapshotByExternalRefId(externalRefId)!!.messageState.appRecStatus shouldBe AppRecStatus.OK
             }
 
             service.processNotifications(this).join()
