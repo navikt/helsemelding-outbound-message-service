@@ -8,20 +8,22 @@ import no.nav.helsemelding.outbound.model.isNotNull
 import no.nav.helsemelding.outbound.model.resolveDelivery
 import no.nav.helsemelding.outbound.model.toDeliveryState
 
-/**
- * Validates transport and application receipt changes before a delivery decision is made.
- *
- * Checks AppRec immutability through [AppRecTransitionEvaluator] and requires acknowledged
- * transport whenever the new snapshot contains an AppRec. Resolves both snapshots to
- * lifecycle states and delegates their transition check to [TransportTransitionEvaluator].
- *
- * Validation failures are reported as [StateTransitionError] values through [Raise].
- * The caller determines whether a valid transition changes the resolved outcome.
- */
+/** Validates transport and application receipt changes before a delivery decision is made. */
 class StateTransitionEvaluator(
     private val transportValidator: TransportTransitionEvaluator,
     private val appRecValidator: AppRecTransitionEvaluator
 ) {
+    /**
+     * Checks AppRec immutability through [AppRecTransitionEvaluator] and requires acknowledged
+     * transport whenever the new snapshot contains an AppRec. Resolves both snapshots to
+     * lifecycle states and delegates their transition check to [TransportTransitionEvaluator].
+     *
+     * Raises [StateTransitionError] through [Raise] if any validation fails.
+     * The caller determines whether a valid transition changes the resolved outcome.
+     *
+     * @param old The evaluation snapshot derived from the previously stored state.
+     * @param new The evaluation snapshot derived from the latest external state.
+     */
     fun Raise<StateTransitionError>.evaluate(old: DeliveryEvaluationState, new: DeliveryEvaluationState) {
         with(appRecValidator) { evaluate(old.appRec, new.appRec) }
 

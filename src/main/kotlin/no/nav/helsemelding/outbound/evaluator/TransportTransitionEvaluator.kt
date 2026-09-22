@@ -8,17 +8,19 @@ import no.nav.helsemelding.outbound.model.isNotCompleted
 import no.nav.helsemelding.outbound.model.isNotInvalid
 import no.nav.helsemelding.outbound.model.isNotRejected
 
-/**
- * Validates transitions between resolved [MessageDeliveryState] values.
- *
- * NEW may transition to any state. PENDING may progress or remain pending, but cannot
- * return to NEW. COMPLETED, REJECTED and INVALID may only transition to themselves.
- * These rules allow intermediate delivery stages to go unobserved.
- *
- * Disallowed transitions raise [StateTransitionError.IllegalTransition] through [Raise].
- * The caller decides how to handle the failure, including persistence and publication.
- */
+/** Validates transitions between resolved [MessageDeliveryState] values. */
 class TransportTransitionEvaluator {
+    /**
+     * Allows NEW to transition to any state and PENDING to transition to any state except NEW.
+     * COMPLETED, REJECTED and INVALID may only remain unchanged.
+     * These rules allow intermediate delivery stages to go unobserved.
+     *
+     * Raises [StateTransitionError.IllegalTransition] through [Raise] if the transition is invalid.
+     * Persistence and publication are handled by the caller.
+     *
+     * @param old The resolved delivery state derived from the previously stored values.
+     * @param new The resolved delivery state derived from the latest external values.
+     */
     fun Raise<StateTransitionError>.evaluate(old: MessageDeliveryState, new: MessageDeliveryState) {
         when (old) {
             MessageDeliveryState.NEW -> Unit
