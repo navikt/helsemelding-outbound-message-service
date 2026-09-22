@@ -17,14 +17,31 @@ object NotificationOffsets : Table("notification_offset") {
     override val primaryKey = PrimaryKey(herId)
 }
 
-/** Stores the last handled notification offset for each her id, allowing consumption to resume after restart. */
+/**
+ * Persists the last handled notification offset for each her id so consumption can resume after restart.
+ *
+ * Offsets are global to the external notification stream and may contain gaps for an individual
+ * her id. Each checkpoint identifies a handled notification, rather than a count of notifications.
+ */
 interface NotificationOffsetRepository {
-    /** Returns the last handled offset, or `0L` when no offset has been stored for [herId]. */
+    /**
+     * Retrieves the offset to use when starting notification consumption.
+     *
+     * @param herId The her id whose notifications are being consumed.
+     * @return The last saved offset, or `0L` when no offset exists for [herId].
+     */
     suspend fun getOffset(herId: Int): Long
 
     /**
-     * Saves [offset] after the notification has been fully handled, including an intentional skip.
-     * Receiving a notification alone is not sufficient to advance the stored offset.
+     * Creates or replaces the offset for [herId] with [offset].
+     *
+     * The caller must save only after processing has completed successfully, including any required
+     * publication and state persistence, or after an intentional skip. A failed notification must
+     * not advance the offset. Saves must follow processing order; this repository does not
+     * prevent an older offset from replacing a newer one.
+     *
+     * @param herId The her id whose notifications are being consumed.
+     * @param offset The offset of the last fully handled notification.
      */
     suspend fun saveOffset(herId: Int, offset: Long)
 }
