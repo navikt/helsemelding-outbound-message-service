@@ -25,3 +25,8 @@ fun MessageDeliveryState.isRejected(): Boolean = this == REJECTED
 fun MessageDeliveryState.isNotRejected(): Boolean = this != REJECTED
 
 fun MessageDeliveryState.isNotInvalid(): Boolean = this != INVALID
+
+fun MessageDeliveryState.isTerminal(): Boolean = when (this) {
+    COMPLETED, REJECTED -> true
+    NEW, PENDING, INVALID -> false
+}

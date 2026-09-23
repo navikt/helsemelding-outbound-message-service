@@ -51,7 +51,6 @@ class StateEvaluatorServiceSpec : StringSpec(
             messageType = DIALOG,
             externalRefId = Uuid.random(),
             lastStateChange = Clock.System.now(),
-            lastPolledAt = null,
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now()
         )

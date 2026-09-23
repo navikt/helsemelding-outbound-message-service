@@ -5,30 +5,17 @@ import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.right
 import no.nav.helsemelding.outbound.LifecycleError
-import no.nav.helsemelding.outbound.config
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
-import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
-import no.nav.helsemelding.outbound.model.ExternalDeliveryState.UNCONFIRMED
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageType
-import no.nav.helsemelding.outbound.model.isAcknowledged
-import no.nav.helsemelding.outbound.model.isNull
-import no.nav.helsemelding.outbound.model.isUnconfirmed
 import no.nav.helsemelding.outbound.repository.Messages.appRecStatus
 import no.nav.helsemelding.outbound.repository.Messages.externalDeliveryState
-import no.nav.helsemelding.outbound.repository.Messages.lastPolledAt
-import no.nav.helsemelding.outbound.util.olderThanSeconds
 import org.jetbrains.exposed.v1.core.ResultRow
-import org.jetbrains.exposed.v1.core.SortOrder.ASC_NULLS_FIRST
 import org.jetbrains.exposed.v1.core.Table
-import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.core.inList
-import org.jetbrains.exposed.v1.core.isNull
-import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.datetime.CurrentTimestamp
 import org.jetbrains.exposed.v1.datetime.timestamp
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -36,9 +23,7 @@ import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
-import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.updateReturning
-import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
@@ -58,7 +43,6 @@ object Messages : Table("messages") {
         .nullable()
 
     val lastStateChange = timestamp("last_state_change")
-    val lastPolledAt = timestamp("last_polled_at").nullable()
     val createdAt = timestamp("created_at")
     val updatedAt = timestamp("updated_at")
 }
@@ -82,10 +66,6 @@ interface MessageRepository {
 
     suspend fun findById(id: Uuid): MessageState?
 
-    suspend fun findForPolling(): List<MessageState>
-
-    suspend fun markPolled(externalRefIds: List<Uuid>): Int
-
     suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long>
 
     suspend fun countByAppRecState(): Map<AppRecStatus?, Long>
@@ -94,7 +74,6 @@ interface MessageRepository {
 }
 
 class ExposedMessageRepository(private val database: Database) : MessageRepository {
-    private val poller = config().poller
 
     override suspend fun createState(
         id: Uuid,
@@ -148,28 +127,6 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             .selectAll().where { Messages.externalRefId eq externalRefId }
             .singleOrNull()
             ?.toMessageState()
-    }
-
-    override suspend fun findForPolling(): List<MessageState> = suspendTransaction(database) {
-        Messages
-            .selectAll()
-            .where {
-                (
-                    externalDeliveryState.isNull() or
-                        externalDeliveryState.inList(listOf(ACKNOWLEDGED, UNCONFIRMED))
-                    ) and
-                    appRecStatus.isNull() and
-                    (lastPolledAt.isNull() or lastPolledAt.olderThanSeconds(poller.minAgeSeconds))
-            }
-            .orderBy(lastPolledAt to ASC_NULLS_FIRST)
-            .limit(poller.fetchLimit)
-            .map { it.toMessageState() }
-    }
-
-    override suspend fun markPolled(externalRefIds: List<Uuid>): Int = suspendTransaction(database) {
-        Messages.update({ Messages.externalRefId inList externalRefIds }) {
-            it[lastPolledAt] = CurrentTimestamp
-        }
     }
 
     override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = suspendTransaction(database) {
@@ -259,14 +216,12 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         this[externalDeliveryState],
         this[appRecStatus],
         this[Messages.lastStateChange],
-        this[lastPolledAt],
         this[Messages.createdAt],
         this[Messages.updatedAt]
     )
 }
 
 class FakeMessageRepository : MessageRepository {
-    private val poller = config().poller
     private val messagesById = mutableMapOf<Uuid, MessageState>()
     private val byExternalRefId = mutableMapOf<Uuid, Uuid>()
     private var countByExternalDeliveryState = mutableMapOf<ExternalDeliveryState?, Long>()
@@ -306,7 +261,6 @@ class FakeMessageRepository : MessageRepository {
             externalDeliveryState = null,
             appRecStatus = null,
             lastStateChange = lastStateChange,
-            lastPolledAt = null,
             createdAt = lastStateChange,
             updatedAt = lastStateChange
         )
@@ -343,39 +297,6 @@ class FakeMessageRepository : MessageRepository {
 
     override suspend fun findById(id: Uuid): MessageState? {
         return messagesById[id]
-    }
-
-    override suspend fun findForPolling(): List<MessageState> =
-        messagesById.values
-            .filter { message ->
-                (
-                    message.externalDeliveryState.isNull() ||
-                        message.externalDeliveryState.isAcknowledged() ||
-                        message.externalDeliveryState.isUnconfirmed()
-                    ) &&
-                    message.appRecStatus.isNull() &&
-                    (
-                        message.lastPolledAt == null ||
-                            message.lastPolledAt.plus(poller.minAgeSeconds) < Clock.System.now()
-                        )
-            }
-            .take(poller.fetchLimit)
-
-    override suspend fun markPolled(externalRefIds: List<Uuid>): Int {
-        val now = Clock.System.now()
-        var count = 0
-
-        externalRefIds.forEach { externalRefId ->
-            val messageId = byExternalRefId[externalRefId]
-            if (messageId != null) {
-                val msg = messagesById[messageId]
-                if (msg != null) {
-                    messagesById[messageId] = msg.copy(lastPolledAt = now)
-                    count++
-                }
-            }
-        }
-        return count
     }
 
     override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = countByExternalDeliveryState

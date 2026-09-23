@@ -28,6 +28,8 @@ import kotlin.uuid.Uuid
 class FakeEdiAdapterClient : EdiAdapterClient {
     private val statuses = mutableMapOf<Uuid, Either<EdiAdapterError, GetStatusResponse>>()
     private val postMessages = ArrayDeque<Either<EdiAdapterError, PostMessageResponse>>()
+    var notifications: Flow<Either<EdiAdapterError, Notification>> = emptyFlow()
+    val notificationRequests = mutableListOf<Pair<List<Int>, Long?>>()
     val statusRequests = mutableListOf<Uuid>()
     val sentMessages = mutableListOf<PostMessageRequest>()
     val errorMessage404 = EdiAdapterError.Api(404)
@@ -63,7 +65,10 @@ class FakeEdiAdapterClient : EdiAdapterClient {
     override suspend fun postApprec(id: Uuid, request: PostAppRecRequest): Either<EdiAdapterError, PostApprecResponse> = Left(errorMessage404)
     override suspend fun markMessageAsDownloaded(id: Uuid, request: MarkAsDownloadedRequest): Either<EdiAdapterError, Unit> = Left(errorMessage404)
     override suspend fun getNotifications(herIds: List<Int>, offset: Long, notificationsToFetch: Int?): Either<EdiAdapterError, GetNotificationsResponse> = Right(GetNotificationsResponse(emptyList()))
-    override fun streamNotifications(herIds: List<Int>, offset: Long?): Flow<Either<EdiAdapterError, Notification>> = emptyFlow()
+    override fun streamNotifications(herIds: List<Int>, offset: Long?): Flow<Either<EdiAdapterError, Notification>> {
+        notificationRequests += herIds to offset
+        return notifications
+    }
     override suspend fun setMshConfigurations(request: SetMshConfigurationsRequest): Either<EdiAdapterError, Unit> = Left(errorMessage404)
     override suspend fun deleteMshConfigurations(herIds: List<Int>): Either<EdiAdapterError, Unit> = Left(errorMessage404)
     override suspend fun ping(): Either<EdiAdapterError, PingResponse> = Left(errorMessage404)

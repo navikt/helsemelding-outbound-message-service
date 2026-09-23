@@ -3,28 +3,23 @@ package no.nav.helsemelding.outbound.evaluator
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.TransportStatus
 
-/**
- * Translates an external transport delivery state into the internal
- * [TransportStatus] representation.
- *
- * This function performs a total, side-effect-free mapping and never fails:
- * all external states (including `null`) are exhaustively handled.
- *
- * - `null` → `NEW`
- * - `UNCONFIRMED` → `PENDING`
- * - `ACKNOWLEDGED` → `ACKNOWLEDGED`
- * - `REJECTED` → `REJECTED`
- *
- * The translator does not perform any validation; it simply normalizes
- * external transport semantics into the domain’s transport lifecycle.
- */
+/** Maps external delivery status to the internal [TransportStatus] used for evaluation. */
 class TransportStatusTranslator {
+    /**
+     * Maps an absent status to NEW, UNCONFIRMED to PENDING and ACKNOWLEDGED to ACKNOWLEDGED.
+     * Both REJECTED and ABANDONED resolve to REJECTED for transport evaluation.
+     * Transition validation is handled separately by [StateTransitionEvaluator].
+     *
+     * @param external The external transport status, or `null` if none has been received.
+     * @return The normalized transport status used to evaluate the delivery outcome.
+     */
     fun translate(
         external: ExternalDeliveryState?
     ): TransportStatus = when (external) {
         null -> TransportStatus.NEW
         ExternalDeliveryState.UNCONFIRMED -> TransportStatus.PENDING
         ExternalDeliveryState.ACKNOWLEDGED -> TransportStatus.ACKNOWLEDGED
+        ExternalDeliveryState.ABANDONED,
         ExternalDeliveryState.REJECTED -> TransportStatus.REJECTED
     }
 }
