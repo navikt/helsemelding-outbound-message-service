@@ -65,7 +65,7 @@ class NotificationService(
             .onEach { either ->
                 either
                     .onLeft { failure ->
-                        throw NotificationProcessingException("Notification stream failed for herId: $herId: $failure")
+                        throw NotificationProcessingException("Notification stream failed for herId: $herId failure: $failure")
                     }
                     .onRight { notification ->
                         processNotification(notification)
@@ -86,7 +86,7 @@ class NotificationService(
                     ?.run {
                         tracer.withSpan("Refresh message status") {
                             log.info {
-                                "${messageState.logPrefix()} Processing notification with" +
+                                "${messageState.logPrefix()} Processing notification with " +
                                     "id: ${notification.notificationId} type: ${notification.type} offset: ${notification.offset}"
                             }
                             fetchExternalStatus(messageState)
@@ -206,12 +206,12 @@ class NotificationService(
             Rejected.Transport -> when (transport) {
                 ExternalDeliveryState.ABANDONED -> ErrorPayload(
                     code = "TRANSPORT_ABANDONED",
-                    details = "NHN abandoned transport after failed sending attempts for messageId=$messageId"
+                    details = "Transport abandoned after failed sending attempts for messageId: $messageId"
                 )
 
                 else -> ErrorPayload(
                     code = "REJECTED_TRANSPORT",
-                    details = "Transport failed for messageId=$messageId"
+                    details = "Transport rejected for messageId: $messageId"
                 )
             }
 
@@ -219,7 +219,7 @@ class NotificationService(
                 to.takeIf { it == INVALID }?.let {
                     ErrorPayload(
                         code = "INVALID_STATE",
-                        details = "Unable to evaluate next state for messageId=$messageId"
+                        details = "Unable to evaluate next state for messageId: $messageId"
                     )
                 }
 
