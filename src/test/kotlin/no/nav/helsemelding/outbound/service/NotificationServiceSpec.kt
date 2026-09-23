@@ -410,7 +410,7 @@ class NotificationServiceSpec : StringSpec(
             val event = publisher.published.single()
             event.status shouldBe MessageStatus.REJECTED_TRANSPORT
             event.error!!.code shouldBe "TRANSPORT_ABANDONED"
-            event.error.details shouldBe "NHN abandoned transport after failed sending attempts for messageId=${snapshot.messageState.id}"
+            event.error.details shouldBe "Transport abandoned after failed sending attempts for messageId: ${snapshot.messageState.id}"
             event.apprec shouldBe null
             val stored = states.getMessageSnapshotByExternalRefId(externalRefId)!!
             stored.messageState.externalDeliveryState shouldBe ABANDONED
