@@ -16,6 +16,7 @@ fun StatusInfo.translate(): ExternalStatus =
         appRecStatus = apprecInfo?.appRecStatus?.translate(),
         apprec = apprecInfo?.let { info ->
             AppRecPayload(
+                id = info.appRecId,
                 receiverHerId = receiverHerId,
                 status = info.appRecStatus?.name,
                 errorList = info.appRecErrorList.orEmpty().map { it.toAppRecErrorMessage() }

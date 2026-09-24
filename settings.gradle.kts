@@ -28,7 +28,7 @@ dependencyResolutionManagement {
             version("prometheus", "1.12.4")
             version("logback", "1.4.11")
             version("logstash", "7.4")
-            version("edi-adapter-client", "0.3.0")
+            version("edi-adapter-client", "0.3.1")
             version("message-converter", "0.0.7")
             version("opentelemetry-mdc", "2.24.0-alpha")
             version("opentelemetry-extension-kotlin", "1.58.0")
