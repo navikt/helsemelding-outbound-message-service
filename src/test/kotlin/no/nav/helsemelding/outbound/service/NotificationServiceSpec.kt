@@ -103,7 +103,7 @@ class NotificationServiceSpec : StringSpec(
             service.processNotifications(this).join()
 
             client.downloadedRequests.single().first shouldBe appRecId
-            client.downloadedRequests.single().second.receiverHerId shouldBe 8142520
+            client.downloadedRequests.single().second.receiverHerId shouldBe 8142519
             repository.getOffset(senderHerId) shouldBe 43L
         }
 

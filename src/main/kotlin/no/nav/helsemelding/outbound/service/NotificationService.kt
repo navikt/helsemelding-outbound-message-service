@@ -157,10 +157,10 @@ class NotificationService(
     }
 
     private suspend fun markApprecMessageAsDownloaded(apprecPayload: AppRecPayload?, message: MessageState) {
-        if (apprecPayload?.id != null && apprecPayload.receiverHerId != null) {
+        if (apprecPayload?.id != null) {
             ediAdapterClient.markMessageAsDownloaded(
                 apprecPayload.id,
-                MarkAsDownloadedRequest(apprecPayload.receiverHerId)
+                MarkAsDownloadedRequest(config().ediAdapter.senderHerId.value)
             )
                 .onLeft { error ->
                     log.error { "${message.logPrefix()} Failed marking apprec message with id: ${apprecPayload.id} as downloaded: $error" }

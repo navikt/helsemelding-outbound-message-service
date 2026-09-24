@@ -52,8 +52,7 @@ fun main() = SuspendApp {
 
             setMshConfiguration(
                 deps.ediAdapterClient,
-                config().ediAdapter.senderHerId.value,
-                config().ediAdapter.receiverHerId.value
+                config().ediAdapter.senderHerId.value
             )
 
             val metrics = CustomMetrics(deps.meterRegistry)
@@ -109,20 +108,12 @@ internal fun stateServiceModule(
     configureRoutes(meterRegistry)
 }
 
-private suspend fun Raise<Throwable>.setMshConfiguration(
-    ediAdapterClient: EdiAdapterClient,
-    senderHerId: Int,
-    receiverHerId: Int
-) {
+private suspend fun Raise<Throwable>.setMshConfiguration(ediAdapterClient: EdiAdapterClient, senderHerId: Int) {
     ediAdapterClient.setMshConfigurations(
         SetMshConfigurationsRequest(
             listOf(
                 MshConfiguration(
                     herId = senderHerId,
-                    receiveNotificationChannel = API
-                ),
-                MshConfiguration(
-                    herId = receiverHerId,
                     receiveNotificationChannel = API
                 )
             )

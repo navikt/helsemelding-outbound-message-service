@@ -106,8 +106,7 @@ data class Server(
 
 data class EdiAdapter(
     val scope: Scope,
-    val senderHerId: SenderHerId,
-    val receiverHerId: ReceiverHerId
+    val senderHerId: SenderHerId
 ) {
     @JvmInline
     value class Scope(val value: String)
