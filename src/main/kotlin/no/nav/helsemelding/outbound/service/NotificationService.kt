@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
+import no.nav.helsemelding.ediadapter.model.v3.MarkAsDownloadedRequest
 import no.nav.helsemelding.ediadapter.model.v3.Notification
 import no.nav.helsemelding.ediadapter.model.v3.NotificationType.NEW_MESSAGE
 import no.nav.helsemelding.ediadapter.model.v3.NotificationType.REFUSED_MESSAGE
@@ -20,6 +21,7 @@ import no.nav.helsemelding.outbound.FetchStatusError
 import no.nav.helsemelding.outbound.PublishError
 import no.nav.helsemelding.outbound.StateTransitionError
 import no.nav.helsemelding.outbound.config
+import no.nav.helsemelding.outbound.model.AppRecPayload
 import no.nav.helsemelding.outbound.model.ErrorPayload
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalStatus
@@ -117,7 +119,10 @@ class NotificationService(
                             )
                         }
                     }
-                    .onRight { recordStateChange(message, external) }
+                    .onRight {
+                        recordStateChange(message, external)
+                        markApprecMessageAsDownloaded(statusEvent.apprec, message)
+                    }
             }
         }
     }
@@ -149,6 +154,19 @@ class NotificationService(
                 newAppRecStatus = external.appRecStatus
             )
         )
+    }
+
+    private suspend fun markApprecMessageAsDownloaded(apprecPayload: AppRecPayload?, message: MessageState) {
+        if (apprecPayload?.id != null && apprecPayload.receiverHerId != null) {
+            ediAdapterClient.markMessageAsDownloaded(
+                apprecPayload.id,
+                MarkAsDownloadedRequest(apprecPayload.receiverHerId)
+            )
+                .onLeft { error ->
+                    log.error { "${message.logPrefix()} Failed marking apprec message with id: ${apprecPayload.id} as downloaded: $error" }
+                }
+                .onRight { log.info { "${message.logPrefix()} Marked apprec message with id: ${apprecPayload.id} as downloaded" } }
+        }
     }
 
     private fun determineNextState(

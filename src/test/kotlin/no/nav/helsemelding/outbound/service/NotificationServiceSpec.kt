@@ -81,20 +81,48 @@ class NotificationServiceSpec : StringSpec(
             restartedClient.notificationRequests shouldBe listOf(listOf(senderHerId) to 140L)
         }
 
-        "offset is saved after publication and persistence" {
+        "apprec is marked as downloaded after state change and before offset is saved" {
             val (client, states, publisher, service, repository) = fixture()
             val externalRefId = Uuid.random()
+            val appRecId = Uuid.random()
             states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
+            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, appRecId)
             client.notifications = flowOf(notification(externalRefId).right())
-            repository.beforeSave = {
+            client.beforeMarkDownloaded = {
                 publisher.published.single().status shouldBe MessageStatus.COMPLETED
-                states.getMessageSnapshotByExternalRefId(externalRefId)!!.messageState.appRecStatus shouldBe AppRecStatus.OK
+                val messageStateSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+                messageStateSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
+                repository.getOffset(senderHerId) shouldBe 0L
+            }
+            repository.beforeSave = {
+                client.downloadedRequests.single().first shouldBe appRecId
+                val messageStateSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+                messageStateSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
             }
 
             service.processNotifications(this).join()
 
+            client.downloadedRequests.single().first shouldBe appRecId
+            client.downloadedRequests.single().second.receiverHerId shouldBe 8142520
             repository.getOffset(senderHerId) shouldBe 43L
+        }
+
+        "failure to mark apprec as downloaded is logged while state and offset advance" {
+            val (client, states, publisher, service, repository) = fixture()
+            val externalRefId = Uuid.random()
+            val appRecId = Uuid.random()
+            states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, appRecId)
+            client.notifications = flowOf(notification(externalRefId).right())
+            client.downloadError = EdiAdapterError.Api(503)
+
+            service.processNotifications(this).join()
+
+            repository.getOffset(senderHerId) shouldBe 43L
+            val messageStateSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+            messageStateSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
+            publisher.published.size shouldBe 1
+            client.downloadedRequests.single().first shouldBe appRecId
         }
 
         "status fetch failure stops collection before advancing past the failed notification" {
@@ -412,6 +440,7 @@ class NotificationServiceSpec : StringSpec(
             event.error!!.code shouldBe "TRANSPORT_ABANDONED"
             event.error.details shouldBe "Transport abandoned after failed sending attempts for messageId: ${snapshot.messageState.id}"
             event.apprec shouldBe null
+            client.downloadedRequests shouldBe emptyList()
             val stored = states.getMessageSnapshotByExternalRefId(externalRefId)!!
             stored.messageState.externalDeliveryState shouldBe ABANDONED
             stored.messageStateChanges.last().newDeliveryState shouldBe ABANDONED
@@ -570,6 +599,7 @@ class NotificationServiceSpec : StringSpec(
             event.apprec!!.receiverHerId shouldBe 8142520
             event.apprec.status shouldBe OK.toString()
             event.apprec.errorList shouldBe emptyList()
+            ediAdapterClient.downloadedRequests shouldBe emptyList()
         }
 
         "external REJECTED publishes rejected transport status" {

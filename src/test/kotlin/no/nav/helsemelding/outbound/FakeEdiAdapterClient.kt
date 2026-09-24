@@ -31,11 +31,14 @@ class FakeEdiAdapterClient : EdiAdapterClient {
     var notifications: Flow<Either<EdiAdapterError, Notification>> = emptyFlow()
     val notificationRequests = mutableListOf<Pair<List<Int>, Long?>>()
     val statusRequests = mutableListOf<Uuid>()
+    val downloadedRequests = mutableListOf<Pair<Uuid, MarkAsDownloadedRequest>>()
+    var downloadError: EdiAdapterError? = null
+    var beforeMarkDownloaded: suspend () -> Unit = {}
     val sentMessages = mutableListOf<PostMessageRequest>()
     val errorMessage404 = EdiAdapterError.Api(404)
 
-    fun givenStatus(id: Uuid, deliveryState: DeliveryState, appRecStatus: AppRecStatus?) {
-        givenStatusList(id, listOf(StatusInfo(8142520, deliveryState, true, appRecStatus?.let { ApprecInfo(it) })))
+    fun givenStatus(id: Uuid, deliveryState: DeliveryState, appRecStatus: AppRecStatus?, appRecId: Uuid? = null) {
+        givenStatusList(id, listOf(StatusInfo(8142520, deliveryState, true, appRecStatus?.let { ApprecInfo(it, appRecId = appRecId) })))
     }
 
     fun givenStatusList(id: Uuid, list: List<StatusInfo>?) {
@@ -63,7 +66,11 @@ class FakeEdiAdapterClient : EdiAdapterClient {
     override suspend fun getMessage(id: Uuid): Either<EdiAdapterError, GetMessageResponse> = Left(errorMessage404)
     override suspend fun getBusinessDocument(id: Uuid): Either<EdiAdapterError, GetBusinessDocumentResponse> = Left(errorMessage404)
     override suspend fun postApprec(id: Uuid, request: PostAppRecRequest): Either<EdiAdapterError, PostApprecResponse> = Left(errorMessage404)
-    override suspend fun markMessageAsDownloaded(id: Uuid, request: MarkAsDownloadedRequest): Either<EdiAdapterError, Unit> = Left(errorMessage404)
+    override suspend fun markMessageAsDownloaded(id: Uuid, request: MarkAsDownloadedRequest): Either<EdiAdapterError, Unit> {
+        downloadedRequests += id to request
+        beforeMarkDownloaded()
+        return downloadError?.let(::Left) ?: Right(Unit)
+    }
     override suspend fun getNotifications(herIds: List<Int>, offset: Long, notificationsToFetch: Int?): Either<EdiAdapterError, GetNotificationsResponse> = Right(GetNotificationsResponse(emptyList()))
     override fun streamNotifications(herIds: List<Int>, offset: Long?): Flow<Either<EdiAdapterError, Notification>> {
         notificationRequests += herIds to offset
