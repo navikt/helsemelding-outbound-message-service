@@ -113,9 +113,6 @@ data class EdiAdapter(
 
     @JvmInline
     value class SenderHerId(val value: Int)
-
-    @JvmInline
-    value class ReceiverHerId(val value: Int)
 }
 
 data class Metrics(
