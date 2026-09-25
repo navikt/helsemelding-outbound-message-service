@@ -60,18 +60,18 @@ class NotificationService(
     private val notificationOffsetRepository: NotificationOffsetRepository
 ) {
     suspend fun processNotifications(scope: CoroutineScope): Job {
-        val herId = config().ediAdapter.senderHerId.value
-        val offset = notificationOffsetRepository.getOffset(herId)
-        log.info { "Starting notification stream for herId: $herId from offset: $offset" }
-        return ediAdapterClient.streamNotifications(herId, offset)
+        val senderHerId = config().ediAdapter.senderHerId.value
+        val offset = notificationOffsetRepository.getOffset(senderHerId)
+        log.info { "Starting notification stream for herId: $senderHerId from offset: $offset" }
+        return ediAdapterClient.streamNotifications(senderHerId, offset)
             .onEach { either ->
                 either
                     .onLeft { failure ->
-                        throw NotificationProcessingException("Notification stream failed for herId: $herId failure: $failure")
+                        throw NotificationProcessingException("Notification stream failed for herId: $senderHerId failure: $failure")
                     }
                     .onRight { notification ->
                         processNotification(notification)
-                        notificationOffsetRepository.saveOffset(herId, notification.offset)
+                        notificationOffsetRepository.saveOffset(senderHerId, notification.offset)
                     }
             }
             .flowOn(Dispatchers.IO)
@@ -157,10 +157,11 @@ class NotificationService(
     }
 
     private suspend fun markApprecMessageAsDownloaded(apprecPayload: AppRecPayload?, message: MessageState) {
-        if (apprecPayload?.id != null && apprecPayload.receiverHerId != null) {
+        if (apprecPayload?.id != null) {
+            val senderHerId = config().ediAdapter.senderHerId.value
             ediAdapterClient.markMessageAsDownloaded(
                 apprecPayload.id,
-                MarkAsDownloadedRequest(apprecPayload.receiverHerId)
+                MarkAsDownloadedRequest(senderHerId)
             )
                 .onLeft { error ->
                     log.error { "${message.logPrefix()} Failed marking apprec message with id: ${apprecPayload.id} as downloaded: $error" }
