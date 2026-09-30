@@ -13,10 +13,11 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
+import no.nav.helsemelding.ediadapter.model.v3.DeleteNotificationsRequest
 import no.nav.helsemelding.ediadapter.model.v3.MarkAsDownloadedRequest
-import no.nav.helsemelding.ediadapter.model.v3.Notification
 import no.nav.helsemelding.ediadapter.model.v3.NotificationType.NEW_MESSAGE
 import no.nav.helsemelding.ediadapter.model.v3.NotificationType.REFUSED_MESSAGE
+import no.nav.helsemelding.ediadapter.model.v3.UnreadNotification
 import no.nav.helsemelding.outbound.FetchStatusError
 import no.nav.helsemelding.outbound.PublishError
 import no.nav.helsemelding.outbound.StateTransitionError
@@ -42,7 +43,6 @@ import no.nav.helsemelding.outbound.model.formatTransition
 import no.nav.helsemelding.outbound.model.formatUnchanged
 import no.nav.helsemelding.outbound.model.logPrefix
 import no.nav.helsemelding.outbound.publisher.MessagePublisher
-import no.nav.helsemelding.outbound.repository.NotificationOffsetRepository
 import no.nav.helsemelding.outbound.util.translate
 import no.nav.helsemelding.outbound.util.withSpan
 import no.nav.helsemelding.outbound.withMessageContext
@@ -56,32 +56,27 @@ class NotificationService(
     private val ediAdapterClient: EdiAdapterClient,
     private val messageStateService: MessageStateService,
     private val stateEvaluatorService: StateEvaluatorService,
-    private val statusMessagePublisher: MessagePublisher,
-    private val notificationOffsetRepository: NotificationOffsetRepository
+    private val statusMessagePublisher: MessagePublisher
 ) {
-    suspend fun processNotifications(scope: CoroutineScope): Job {
+    fun processNotifications(scope: CoroutineScope): Job {
         val senderHerId = config().ediAdapter.senderHerId.value
-        val offset = notificationOffsetRepository.getOffset(senderHerId)
-        log.info { "Starting notification stream for herId: $senderHerId from offset: $offset" }
-        return ediAdapterClient.streamNotifications(senderHerId, offset)
+        log.info { "Starting unread notification stream for herId: $senderHerId" }
+        return ediAdapterClient.streamUnreadNotifications(senderHerId)
             .onEach { either ->
                 either
                     .onLeft { failure ->
                         throw NotificationProcessingException("Notification stream failed for herId: $senderHerId failure: $failure")
                     }
-                    .onRight { notification ->
-                        processNotification(notification)
-                        notificationOffsetRepository.saveOffset(senderHerId, notification.offset)
-                    }
+                    .onRight { notification -> processNotification(notification) }
             }
             .flowOn(Dispatchers.IO)
             .launchIn(scope)
     }
 
-    private suspend fun processNotification(notification: Notification) {
+    private suspend fun processNotification(notification: UnreadNotification) {
         when (notification.type) {
             NEW_MESSAGE, REFUSED_MESSAGE -> Unit
-            else ->
+            else -> {
                 notification.relatedMessageId
                     ?.let { messageStateService.getMessageSnapshotByExternalRefId(it) }
                     ?.takeUnless { stateEvaluatorService.isTerminal(it.messageState) }
@@ -89,7 +84,7 @@ class NotificationService(
                         tracer.withSpan("Refresh message status") {
                             log.info {
                                 "${messageState.logPrefix()} Processing notification with " +
-                                    "id: ${notification.notificationId} type: ${notification.type} offset: ${notification.offset}"
+                                    "id: ${notification.notificationId} and type: ${notification.type}"
                             }
                             fetchExternalStatus(messageState)
                                 .onLeft { failure ->
@@ -100,7 +95,16 @@ class NotificationService(
                                 .onRight { processStatus(messageState, it) }
                         }
                     }
+                deleteNotification(notification.notificationId)
+            }
         }
+    }
+
+    private suspend fun deleteNotification(notificationId: Uuid) {
+        ediAdapterClient.deleteNotifications(DeleteNotificationsRequest(listOf(notificationId)))
+            .onLeft { failure ->
+                log.error { "Failed deleting notification with id: $notificationId failure: $failure" }
+            }
     }
 
     private suspend fun processStatus(message: MessageState, external: ExternalStatus) {
@@ -164,9 +168,9 @@ class NotificationService(
                 MarkAsDownloadedRequest(senderHerId)
             )
                 .onLeft { error ->
-                    log.error { "${message.logPrefix()} Failed marking apprec message with id: ${apprecPayload.id} as downloaded: $error" }
+                    log.error { "${message.logPrefix()} Failed marking apprec with id: ${apprecPayload.id} as downloaded: $error" }
                 }
-                .onRight { log.info { "${message.logPrefix()} Marked apprec message with id: ${apprecPayload.id} as downloaded" } }
+                .onRight { log.info { "${message.logPrefix()} Marked apprec with id: ${apprecPayload.id} as downloaded" } }
         }
     }
 
@@ -229,7 +233,7 @@ class NotificationService(
                 )
 
                 else -> ErrorPayload(
-                    code = "REJECTED_TRANSPORT",
+                    code = "TRANSPORT_REJECTED",
                     details = "Transport rejected for messageId: $messageId"
                 )
             }
@@ -264,4 +268,5 @@ class NotificationService(
     }
 }
 
-internal class NotificationProcessingException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+internal class NotificationProcessingException(message: String, cause: Throwable? = null) :
+    RuntimeException(message, cause)
