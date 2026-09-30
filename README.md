@@ -10,7 +10,7 @@ It connects outgoing messages on Kafka with the external messaging system and ma
 2. **Follow progress.** Notifications from the adapter trigger a lookup of the message's current status. The service compares that status with its locally recorded state and evaluates the transition.
 3. **Report and record.** Status updates are published to Kafka, then the new state and its history are recorded. Consumers receive updates while delivery is pending as well as when it completes or is rejected.
 
-Notifications for incoming or untracked messages are ignored. Once a tracked message is completed or rejected, further notifications for it are skipped.
+The service owns outgoing status notifications (`MESSAGE_SENT_STATE_UPDATED`, `MESSAGE_APPREC_INFO_UPDATED` and `MESSAGE_DELIVERY_STATE_UPDATED`) and deletes them after handling. Status notifications for untracked or terminal messages are deleted without fetching status. Incoming notifications (`NEW_MESSAGE` and `REFUSED_MESSAGE`) are ignored without deletion, leaving them available to other services.
 
 ## Delivery model
 
@@ -36,7 +36,7 @@ The service evaluates the latest available status, so it does not need to observ
 
 **Notification-driven updates.** Notifications identify messages that may have changed. Fetching their current status keeps evaluation based on the external system's latest view.
 
-**Restart recovery.** The last handled notification offset is stored in PostgreSQL after successful processing or an intentional skip. Consumption resumes from that offset after restart, or starts from `0` when no offset exists. Stream and processing failures stop the application without advancing past the failed notification.
+**Restart recovery.** The service consumes unread notifications and deletes outgoing status notifications after successful processing or an intentional skip. Notifications that have not been deleted remain available after reconnection or restart. Stream and processing failures stop the application. Notification deletion failures are logged while processing continues. Replayed notifications do not produce new status events when the recorded outcome is unchanged.
 
 **Explicit state rules.** Transport status and application receipt status determine the delivery outcome. Transition rules validate their consistency and prevent invalid progressions. Unchanged outcomes do not produce new status events.
 
