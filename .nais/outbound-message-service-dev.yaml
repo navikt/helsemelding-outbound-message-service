@@ -78,4 +78,3 @@ spec:
         - application: azure-token-generator
           namespace: aura
           cluster: dev-gcp
-  env:
