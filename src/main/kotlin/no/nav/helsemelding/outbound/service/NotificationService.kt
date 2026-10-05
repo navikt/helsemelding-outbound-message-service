@@ -105,6 +105,7 @@ class NotificationService(
             .onLeft { failure ->
                 log.error { "Failed deleting notification with id: $notificationId failure: $failure" }
             }
+            .onRight { log.info { "Successfully deleted notification with id: $notificationId" } }
     }
 
     private suspend fun processStatus(message: MessageState, external: ExternalStatus) {
