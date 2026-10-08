@@ -13,7 +13,6 @@ import no.nav.helsemelding.ediadapter.model.v3.PostMessageResponse
 import no.nav.helsemelding.outbound.EdiAdapterError.SendFailure
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
 import no.nav.helsemelding.outbound.LifecycleError.EdiFailure
-import no.nav.helsemelding.outbound.LifecycleError.InvalidExternalReferenceId
 import no.nav.helsemelding.outbound.LifecycleError.MetadataExtractionFailure
 import no.nav.helsemelding.outbound.LifecycleError.MissingExternalReferenceId
 import no.nav.helsemelding.outbound.LifecycleError.PersistenceFailure
@@ -76,9 +75,7 @@ class MessageLifecycleServiceSpec : StringSpec(
 
             val messageId = Uuid.random()
             val externalRefId = Uuid.random()
-            val metadata = PostMessageResponse(
-                id = externalRefId.toString()
-            )
+            val metadata = PostMessageResponse(externalRefId)
             ediAdapterClient.givenPostMessage(Right(metadata))
 
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
@@ -92,7 +89,7 @@ class MessageLifecycleServiceSpec : StringSpec(
 
         "sends extracted metadata and the original payload without application identity" {
             val payload = messageXml.toByteArray()
-            ediAdapterClient.givenPostMessage(Right(PostMessageResponse(Uuid.random().toString())))
+            ediAdapterClient.givenPostMessage(Right(PostMessageResponse(Uuid.random())))
             messageLifecycleService.registerOutgoingMessage(Uuid.random(), payload).shouldBeRight()
             val request = ediAdapterClient.sentMessages.single()
 
@@ -131,31 +128,12 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
         }
 
-        "returns a lifecycle error when the response has an invalid message ID" {
-            for (id in listOf("", "invalid-id")) {
-                reportedErrors.clear()
-                val messageId = Uuid.random()
-                ediAdapterClient.givenPostMessage(Right(PostMessageResponse(id)))
-
-                messageLifecycleService.registerOutgoingMessage(messageId, messageXml.toByteArray())
-                    .shouldBeLeftOfType<InvalidExternalReferenceId> { error ->
-                        error.messageId shouldBe messageId
-                        error.externalRefId shouldBe id
-                    }
-
-                reportedErrors shouldBe listOf(ErrorTypeTag.EXTERNAL_REFERENCE_VALIDATION_FAILED)
-                messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
-            }
-        }
-
         "returns a persistence error when state creation fails after sending" {
             val payload = messageXml.toByteArray()
 
             val messageId = Uuid.random()
             val externalRefId = Uuid.random()
-            val metadata = PostMessageResponse(
-                id = externalRefId.toString()
-            )
+            val metadata = PostMessageResponse(externalRefId)
             ediAdapterClient.givenPostMessage(Right(metadata))
             messageStateService.givenInitialState(
                 messageId,

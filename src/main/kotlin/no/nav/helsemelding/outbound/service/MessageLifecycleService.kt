@@ -98,11 +98,8 @@ class MessageLifecycleOrchestratorService(
         }
         metrics.registerPostMessageDuration(duration.inWholeNanoseconds)
 
-        val responseId = ensureNotNull(response.id) {
+        return ensureNotNull(response.id) {
             LifecycleError.MissingExternalReferenceId(lifecycleId)
-        }
-        return ensureNotNull(Uuid.parseOrNull(responseId)) {
-            LifecycleError.InvalidExternalReferenceId(lifecycleId, responseId)
         }
             .also { logMessageSent(lifecycleId, it) }
     }
@@ -137,8 +134,7 @@ class MessageLifecycleOrchestratorService(
         val errorType = when (error) {
             is LifecycleError.MetadataExtractionFailure -> ErrorTypeTag.METADATA_EXTRACTION_FAILED
             is EdiFailure -> ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED
-            is LifecycleError.MissingExternalReferenceId,
-            is LifecycleError.InvalidExternalReferenceId -> ErrorTypeTag.EXTERNAL_REFERENCE_VALIDATION_FAILED
+            is LifecycleError.MissingExternalReferenceId -> ErrorTypeTag.EXTERNAL_REFERENCE_VALIDATION_FAILED
             is LifecycleError.Conflict, is LifecycleError.PersistenceFailure -> ErrorTypeTag.STATE_INITIALIZATION_FAILED
         }
         log.error { "messageId=$lifecycleId Failed registering message ($errorType): $error" }

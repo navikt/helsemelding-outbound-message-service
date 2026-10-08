@@ -73,8 +73,6 @@ sealed interface LifecycleError : StateError {
 
     data class MissingExternalReferenceId(val messageId: Uuid) : LifecycleError
 
-    data class InvalidExternalReferenceId(val messageId: Uuid, val externalRefId: String) : LifecycleError
-
     sealed interface ExternalFailure : LifecycleError
 
     data class EdiFailure(
