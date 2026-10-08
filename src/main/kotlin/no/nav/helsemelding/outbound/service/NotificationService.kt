@@ -88,9 +88,7 @@ class NotificationService(
                             }
                             fetchExternalStatus(messageState)
                                 .onLeft { failure ->
-                                    throw NotificationProcessingException(
-                                        "${messageState.logPrefix()} Failed fetching status: $failure"
-                                    )
+                                    throw NotificationProcessingException("${messageState.logPrefix()} Failed fetching status: $failure")
                                 }
                                 .onRight { processStatus(messageState, it) }
                         }
