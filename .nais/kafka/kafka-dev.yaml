@@ -23,4 +23,6 @@ spec:
     - access: read
       application: kafka-manager
       team: helsemelding
-
+    - access: read
+      application: isdialogmelding
+      team: teamsykefravr
