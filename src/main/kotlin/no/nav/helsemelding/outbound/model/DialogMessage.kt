@@ -6,5 +6,6 @@ import kotlin.uuid.Uuid
 @Serializable
 data class DialogMessage(
     val id: Uuid, // TODO: Might be OriginalMsgId
-    val payload: ByteArray
+    val payload: ByteArray,
+    val sourceSystem: String
 )

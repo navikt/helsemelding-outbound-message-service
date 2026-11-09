@@ -1,0 +1,15 @@
+<MsgHead xmlns="http://www.kith.no/xmlstds/msghead/2006-05-24">
+    <MsgInfo>
+        <Type V="DIALOG_FORESPORSEL"/>
+        <Sender>
+            <Organisation>
+                <Ident><Id>30000</Id><TypeId V="HER"/></Ident>
+            </Organisation>
+        </Sender>
+        <Receiver>
+            <Organisation>
+                <Ident><Id>30001</Id><TypeId V="HER"/></Ident>
+            </Organisation>
+        </Receiver>
+    </MsgInfo>
+</MsgHead>
