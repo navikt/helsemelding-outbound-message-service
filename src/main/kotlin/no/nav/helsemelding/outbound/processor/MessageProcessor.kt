@@ -54,8 +54,18 @@ class MessageProcessor(
                 .onLeft { error ->
                     log.error { "Registering message failed: messageId=${dialogMessage.id}, error=$error" }
 
-                    if (error is LifecycleError.MetadataExtractionFailure) {
-                        publishMetadataExtractionError(dialogMessage)
+                    when (error) {
+                        is LifecycleError.MetadataExtractionFailure -> publishError(
+                            dialogMessage,
+                            ErrorCode.METADATA_EXTRACTION_ERROR,
+                            "Unable to extract message metadata"
+                        )
+                        is LifecycleError.EdiFailure -> publishError(
+                            dialogMessage,
+                            ErrorCode.SEND_ERROR,
+                            "Unable to send message to EDI adapter"
+                        )
+                        else -> Unit
                     }
                 }
                 .onRight { snapshot ->
@@ -66,7 +76,7 @@ class MessageProcessor(
         }
     }
 
-    private suspend fun publishMetadataExtractionError(dialogMessage: DialogMessage) {
+    private suspend fun publishError(dialogMessage: DialogMessage, code: ErrorCode, message: String) {
         val errorMessage = ErrorMessage(
             version = 1,
             processedAt = Clock.System.now(),
@@ -75,8 +85,8 @@ class MessageProcessor(
             errors = listOf(
                 ProcessingError(
                     category = ErrorCategory.DELIVERY,
-                    code = ErrorCode.METADATA_EXTRACTION_ERROR,
-                    message = "Unable to extract message metadata"
+                    code = code,
+                    message = message
                 )
             ),
             originalMessage = null
@@ -84,11 +94,11 @@ class MessageProcessor(
 
         errorMessagePublisher.publish(errorMessage)
             .onLeft { error ->
-                log.error { "Published metadata extraction error has failed: messageId=${dialogMessage.id}" }
+                log.error { "Publishing error message failed: messageId=${dialogMessage.id}, code=$code" }
                 when (error) {
                     is PublishError.Failure -> throw error.cause
                 }
             }
-            .onRight { log.info { "Published metadata extraction error: messageId=${dialogMessage.id}" } }
+            .onRight { log.info { "Published error message: messageId=${dialogMessage.id}, code=$code" } }
     }
 }

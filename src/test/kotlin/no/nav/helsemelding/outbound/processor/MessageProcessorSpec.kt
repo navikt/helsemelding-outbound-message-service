@@ -76,6 +76,28 @@ class MessageProcessorSpec : StringSpec({
         stateService.getMessageSnapshotById(messageId).shouldBeNull()
     }
 
+    "should send ErrorMessage to Kafka if sending fails" {
+        val messageId = Uuid.random()
+        adapter.givenPostMessage(EdiAdapterError.Api(503).left())
+
+        val before = Clock.System.now()
+        processor().processMessage(DialogMessage(messageId, validXml.encodeToByteArray(), "test-system"))
+        val after = Clock.System.now()
+
+        adapter.sentMessages.size shouldBe 1
+        stateService.getMessageSnapshotById(messageId).shouldBeNull()
+        val error = publisher.published.single()
+        error.version shouldBe 1
+        (error.processedAt in before..after) shouldBe true
+        error.messageId shouldBe messageId
+        error.sourceSystem shouldBe "test-system"
+        error.originalMessage.shouldBeNull()
+        error.errors.single().category shouldBe ErrorCategory.DELIVERY
+        error.errors.single().code shouldBe ErrorCode.SEND_ERROR
+        error.errors.single().message shouldBe "Unable to send message to EDI adapter"
+        Json.encodeToString(error).contains("MsgHead") shouldBe false
+    }
+
     "should create state without ErrorMessage if sending succeeds" {
         val messageId = Uuid.random()
         adapter.givenPostMessage(PostMessageResponse(Uuid.random()).right())
@@ -84,17 +106,6 @@ class MessageProcessorSpec : StringSpec({
 
         adapter.sentMessages.size shouldBe 1
         (stateService.getMessageSnapshotById(messageId) != null) shouldBe true
-        publisher.published shouldBe emptyList()
-    }
-
-    "should not send ErrorMessage if sending fails" {
-        val messageId = Uuid.random()
-        adapter.givenPostMessage(EdiAdapterError.Api(503).left())
-
-        processor().processMessage(DialogMessage(messageId, validXml.encodeToByteArray(), "test-system"))
-
-        adapter.sentMessages.size shouldBe 1
-        stateService.getMessageSnapshotById(messageId).shouldBeNull()
         publisher.published shouldBe emptyList()
     }
 
