@@ -11,6 +11,7 @@ import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
 import no.nav.helsemelding.ediadapter.model.v3.PostMessageRequest
 import no.nav.helsemelding.messageconverter.MetadataExtractor
 import no.nav.helsemelding.messageconverter.MsgHeadMessageConverter
+import no.nav.helsemelding.messageconverter.error.InvalidXml
 import no.nav.helsemelding.messageconverter.model.MessageMetadata
 import no.nav.helsemelding.outbound.EdiAdapterError.SendFailure
 import no.nav.helsemelding.outbound.LifecycleError
@@ -21,8 +22,10 @@ import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import kotlin.io.encoding.Base64
+import kotlin.random.Random
 import kotlin.time.measureTimedValue
 import kotlin.uuid.Uuid
+import no.nav.helsemelding.ediadapter.client.EdiAdapterError as ClientEdiAdapterError
 
 private val log = KotlinLogging.logger {}
 
@@ -72,10 +75,15 @@ class MessageLifecycleOrchestratorService(
     private fun Raise<LifecycleError>.extractMetadata(
         lifecycleId: Uuid,
         payload: ByteArray
-    ): MessageMetadata =
-        metadataExtractor.extractMetadata(payload.decodeToString())
+    ): MessageMetadata {
+        if (shouldSimulateFailure()) {
+            log.warn { "messageId=$lifecycleId Simulating metadata extraction failure" }
+            raise(LifecycleError.MetadataExtractionFailure(lifecycleId, InvalidXml("Simulated metadata extraction failure")))
+        }
+        return metadataExtractor.extractMetadata(payload.decodeToString())
             .mapLeft { LifecycleError.MetadataExtractionFailure(lifecycleId, it) }
             .bind()
+    }
 
     private fun MessageMetadata.toRequest(payload: ByteArray): PostMessageRequest =
         PostMessageRequest(
@@ -91,6 +99,10 @@ class MessageLifecycleOrchestratorService(
         lifecycleId: Uuid,
         request: PostMessageRequest
     ): Uuid {
+        if (shouldSimulateFailure()) {
+            log.warn { "messageId=$lifecycleId Simulating EDI adapter send failure. Request is not sent" }
+            raise(EdiFailure(SendFailure(lifecycleId, ClientEdiAdapterError.Api(503))))
+        }
         val (response, duration) = measureTimedValue {
             ediAdapterClient.postMessage(request)
                 .mapLeft { EdiFailure(SendFailure(lifecycleId, it)) }
@@ -103,6 +115,9 @@ class MessageLifecycleOrchestratorService(
         }
             .also { logMessageSent(lifecycleId, it) }
     }
+
+    private fun shouldSimulateFailure(): Boolean =
+        System.getenv("NAIS_CLUSTER") == "dev-gcp" && Random.nextDouble() < 0.2
 
     private suspend fun Raise<LifecycleError>.initializeState(
         lifecycleId: Uuid,
