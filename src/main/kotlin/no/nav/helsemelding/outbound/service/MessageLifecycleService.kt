@@ -116,8 +116,15 @@ class MessageLifecycleOrchestratorService(
             .also { logMessageSent(lifecycleId, it) }
     }
 
-    private fun shouldSimulateFailure(): Boolean =
-        System.getenv("NAIS_CLUSTER") == "dev-gcp" && Random.nextDouble() < 0.2
+    private fun shouldSimulateFailure(): Boolean {
+        val cluster = System.getenv("NAIS_CLUSTER")
+        val randomValue = if (cluster == "dev-gcp") Random.nextDouble() else null
+        val simulateFailure = randomValue != null && randomValue < 0.4
+        log.info {
+            "Fault simulation: NAIS_CLUSTER=$cluster, randomValue=$randomValue, probability=0.4, simulateFailure=$simulateFailure"
+        }
+        return simulateFailure
+    }
 
     private suspend fun Raise<LifecycleError>.initializeState(
         lifecycleId: Uuid,
