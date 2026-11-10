@@ -117,7 +117,7 @@ class MessageLifecycleOrchestratorService(
     }
 
     private fun shouldSimulateFailure(): Boolean {
-        val cluster = System.getenv("NAIS_CLUSTER")
+        val cluster = System.getenv("NAIS_CLUSTER_NAME")
         val randomValue = if (cluster == "dev-gcp") Random.nextDouble() else null
         val simulateFailure = randomValue != null && randomValue < 0.4
         log.info {
