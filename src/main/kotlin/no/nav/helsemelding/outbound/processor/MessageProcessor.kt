@@ -63,7 +63,7 @@ class MessageProcessor(
                         is LifecycleError.EdiFailure -> publishError(
                             dialogMessage,
                             ErrorCode.SEND_ERROR,
-                            "Unable to send message to EDI adapter"
+                            "Unable to send message"
                         )
                         else -> Unit
                     }

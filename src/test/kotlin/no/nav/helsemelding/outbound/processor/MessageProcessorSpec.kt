@@ -8,6 +8,7 @@ import io.github.nomisRev.kafka.receiver.ReceiverRecord
 import io.github.nomisRev.kafka.receiver.ReceiverSettings
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -94,7 +95,7 @@ class MessageProcessorSpec : StringSpec({
         error.originalMessage.shouldBeNull()
         error.errors.single().category shouldBe ErrorCategory.DELIVERY
         error.errors.single().code shouldBe ErrorCode.SEND_ERROR
-        error.errors.single().message shouldBe "Unable to send message to EDI adapter"
+        error.errors.single().message shouldBe "Unable to send message"
         Json.encodeToString(error).contains("MsgHead") shouldBe false
     }
 
@@ -105,7 +106,7 @@ class MessageProcessorSpec : StringSpec({
         processor().processMessage(DialogMessage(messageId, validXml.encodeToByteArray(), "test-system"))
 
         adapter.sentMessages.size shouldBe 1
-        (stateService.getMessageSnapshotById(messageId) != null) shouldBe true
+        stateService.getMessageSnapshotById(messageId).shouldNotBeNull()
         publisher.published shouldBe emptyList()
     }
 
@@ -174,4 +175,4 @@ private fun receiverFor(records: Flow<ReceiverRecord<String, ByteArray>> = flowO
 
 private const val errorTopic = "helsemelding.dialog.out.error"
 
-private val validXml = requireNotNull(MessageProcessorSpec::class.java.getResource("/valid-dialog-message.xml")).readText()
+private val validXml = requireNotNull(MessageProcessorSpec::class.java.getResource("/valid-xml.xml")).readText()
