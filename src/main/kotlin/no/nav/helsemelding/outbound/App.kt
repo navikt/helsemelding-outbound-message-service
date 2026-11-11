@@ -27,6 +27,7 @@ import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.plugin.configureMetrics
 import no.nav.helsemelding.outbound.plugin.configureRoutes
 import no.nav.helsemelding.outbound.processor.MessageProcessor
+import no.nav.helsemelding.outbound.publisher.KafkaErrorMessagePublisher
 import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
 import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
@@ -72,7 +73,8 @@ fun main() = SuspendApp {
             val messageProcessor = MessageProcessor(
                 messageReceiver = messageReceiver(deps.kafkaReceiver),
                 messageLifecycleService = messageLifecycleService,
-                metrics = metrics
+                metrics = metrics,
+                errorMessagePublisher = KafkaErrorMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
             )
 
             server(

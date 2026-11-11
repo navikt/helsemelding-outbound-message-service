@@ -14,9 +14,16 @@ class MessageReceiver(
         kafkaReceiver
             .receive(dialogMessageOutTopic)
             .map { record ->
+                val sourceSystem = record.headers()
+                    .lastHeader("sourceSystem")
+                    ?.value()
+                    ?.decodeToString()
+                    ?: "UNKNOWN"
+
                 DialogMessage(
-                    Uuid.parse(record.key()),
-                    record.value()
+                    id = Uuid.parse(record.key()),
+                    payload = record.value(),
+                    sourceSystem = sourceSystem
                 )
             }
 }

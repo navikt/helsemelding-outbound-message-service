@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.exposed.jdbc)
     implementation(libs.edi.adapter.client)
     implementation(libs.message.converter)
+    implementation(libs.json.schema.core)
     implementation(libs.exposed.datetime)
     implementation(libs.hikari)
     implementation(libs.flyway.postgresql)

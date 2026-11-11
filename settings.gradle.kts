@@ -30,6 +30,7 @@ dependencyResolutionManagement {
             version("logstash", "7.4")
             version("edi-adapter-client", "0.5.0")
             version("message-converter", "0.0.7")
+            version("json-schema-core", "0.0.9")
             version("opentelemetry-mdc", "2.24.0-alpha")
             version("opentelemetry-extension-kotlin", "1.58.0")
 
@@ -80,6 +81,7 @@ dependencyResolutionManagement {
 
             library("edi-adapter-client", "no.nav.helsemelding", "edi-adapter-client").versionRef("edi-adapter-client")
             library("message-converter", "no.nav.helsemelding", "message-converter").versionRef("message-converter")
+            library("json-schema-core", "no.nav.helsemelding", "json-schema-core").versionRef("json-schema-core")
 
             library("opentelemetry-logback-mdc", "io.opentelemetry.instrumentation", "opentelemetry-logback-mdc-1.0").versionRef("opentelemetry-mdc")
             library("opentelemetry-extension-kotlin", "io.opentelemetry", "opentelemetry-extension-kotlin").versionRef("opentelemetry-extension-kotlin")
@@ -126,6 +128,17 @@ dependencyResolutionManagement {
 
     repositories {
         mavenCentral()
+        maven {
+            name = "Helsemelding JSON schema"
+            url = uri("https://maven.pkg.github.com/navikt/helsemelding-json-schema")
+            content {
+                includeModule("no.nav.helsemelding", "json-schema-core")
+            }
+            credentials {
+                username = "token"
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
         maven {
             name = "Nav token-support"
             url = uri("https://maven.pkg.github.com/navikt/token-support")
