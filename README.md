@@ -1,13 +1,13 @@
 # helsemelding-outbound-message-service
 
-The service manages the lifecycle of outgoing healthcare messages. It sends messages through the EDI adapter, follows their delivery progress, and publishes status updates so other services can track the outcome.
+The service manages the lifecycle of outgoing healthcare messages. It sends messages through the EDI adapter (EDI 2.0) or, during migration, Emottak on Kafka (EDI 1.0), follows their delivery progress, and publishes status updates so other services can track the outcome.
 
 It connects outgoing messages on Kafka with the external messaging system and maintains a local record of each message's state and history.
 
 ## Message flow
 
-1. **Receive and send.** An outgoing dialog message arrives on Kafka. The service sends it through the EDI adapter and registers it for tracking. Messages already registered are recognized and are not sent again.
-2. **Follow progress.** Notifications from the adapter trigger a lookup of the message's current status. The service compares that status with its locally recorded state and evaluates the transition.
+1. **Receive and send.** An outgoing dialog message arrives on Kafka. The service routes it through the EDI adapter or Emottak and registers it for tracking.
+2. **Follow progress.** The service follows delivery through adapter notifications or status messages from Emottak.
 3. **Report and record.** Status updates are published to Kafka, then the new state and its history are recorded. Consumers receive updates while delivery is pending as well as when it completes or is rejected.
 
 The service owns outgoing status notifications (`MESSAGE_SENT_STATE_UPDATED`, `MESSAGE_APPREC_INFO_UPDATED` and `MESSAGE_DELIVERY_STATE_UPDATED`) and deletes them after handling. Status notifications for untracked or terminal messages are deleted without fetching status. Incoming notifications (`NEW_MESSAGE` and `REFUSED_MESSAGE`) are ignored without deletion, leaving them available to other services.
@@ -42,4 +42,15 @@ The service evaluates the latest available status, so it does not need to observ
 
 **State and history.** PostgreSQL holds the current external status and a history of changes. They are recorded together in a transaction, supporting both ongoing processing and investigation of a message's lifecycle.
 
-**Status events.** Kafka separates message submission from delivery tracking. Published updates carry the delivery status and relevant receipt or error information, allowing downstream services to react independently. Publication happens before local state is saved so failed publications can be retried.
+**Status events.** Kafka separates message publication from delivery tracking. Published updates carry the delivery status and relevant receipt or error information, allowing downstream services to react independently. Publication happens before local state is saved so failed publications can be retried.
+
+## EDI 1.0 during migration
+
+Selected recipients use Emottak over Kafka (EDI 1.0); other messages use the EDI adapter (EDI 2.0).
+Both paths provide message history and publish outcomes on the service's existing status topic.
+
+| Emottak status | Meaning | Published outcome |
+| --- | --- | --- |
+| `ACKNOWLEDGED` | The receiving application accepted the message | `COMPLETED` |
+| `REJECTED` | The receiving application rejected the message | `REJECTED_APPREC` |
+| `REJECTED_TRANSPORT` | Delivery failed permanently | `REJECTED_TRANSPORT` |

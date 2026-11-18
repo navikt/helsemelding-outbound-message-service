@@ -8,5 +8,7 @@ data class CreateState(
     val id: Uuid,
     val externalRefId: Uuid,
     val messageType: MessageType,
-    val occurredAt: Instant = Clock.System.now()
+    val occurredAt: Instant = Clock.System.now(),
+    val transport: MessageTransport = MessageTransport.EDI_2_0,
+    val publishedAt: Instant? = occurredAt
 )

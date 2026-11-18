@@ -1,9 +1,12 @@
 package no.nav.helsemelding.outbound
 
+import arrow.fx.coroutines.ResourceScope
 import io.github.nomisRev.kafka.Admin
 import io.github.nomisRev.kafka.AdminSettings
+import io.github.nomisRev.kafka.publisher.KafkaPublisher
 import io.github.nomisRev.kafka.publisher.PublisherSettings
 import io.github.nomisRev.kafka.receiver.AutoOffsetReset
+import io.github.nomisRev.kafka.receiver.KafkaReceiver
 import io.github.nomisRev.kafka.receiver.ReceiverSettings
 import io.kotest.core.extensions.install
 import io.kotest.core.spec.style.StringSpec
@@ -13,6 +16,9 @@ import org.apache.kafka.clients.admin.AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG
 import org.apache.kafka.clients.admin.AdminClientConfig.CLIENT_ID_CONFIG
 import org.apache.kafka.clients.admin.AdminClientConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG
 import org.apache.kafka.clients.admin.AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG
+import org.apache.kafka.clients.admin.NewTopic
+import org.apache.kafka.clients.admin.RecordsToDelete
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.kafka.common.serialization.ByteArraySerializer
 import org.apache.kafka.common.serialization.StringDeserializer
@@ -27,6 +33,8 @@ abstract class KafkaSpec(body: KafkaSpec.() -> Unit = {}) : StringSpec() {
     init {
         body()
     }
+
+    val kafkaTimeout = 10.seconds
 
     private val transactionTimeoutInterval = 1.seconds
     private val consumerPollingTimeout = 1.seconds
@@ -65,6 +73,18 @@ abstract class KafkaSpec(body: KafkaSpec.() -> Unit = {}) : StringSpec() {
 
     private inline fun <A> admin(body: Admin.() -> A): A = Admin(adminSettings()).use(body)
 
+    fun clearTopic(topic: String) {
+        admin {
+            if (topic !in listTopics().names().get()) {
+                createTopics(listOf(NewTopic(topic, 1, 1.toShort()))).all().get()
+            }
+            val partitions = describeTopics(listOf(topic)).allTopicNames().get().getValue(topic).partitions()
+            deleteRecords(
+                partitions.associate { TopicPartition(topic, it.partition()) to RecordsToDelete.beforeOffset(-1L) }
+            ).all().get()
+        }
+    }
+
     fun publisherSettings(): PublisherSettings<String, ByteArray> =
         PublisherSettings(
             bootstrapServers = container.bootstrapServers,
@@ -77,8 +97,13 @@ abstract class KafkaSpec(body: KafkaSpec.() -> Unit = {}) : StringSpec() {
             bootstrapServers = container.bootstrapServers,
             keyDeserializer = StringDeserializer(),
             valueDeserializer = ByteArrayDeserializer(),
-            groupId = "test-group-id",
+            groupId = "test-group-${Uuid.random()}",
             autoOffsetReset = AutoOffsetReset.Earliest,
             pollTimeout = consumerPollingTimeout
         )
+
+    suspend fun ResourceScope.kafkaPublisher(): KafkaPublisher<String, ByteArray> =
+        install({ KafkaPublisher(publisherSettings()) }) { publisher, _ -> publisher.close() }
+
+    fun kafkaReceiver(): KafkaReceiver<String, ByteArray> = KafkaReceiver(receiverSettings())
 }

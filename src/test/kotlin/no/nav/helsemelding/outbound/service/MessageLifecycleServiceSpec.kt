@@ -12,6 +12,7 @@ import no.nav.helsemelding.ediadapter.client.EdiAdapterError
 import no.nav.helsemelding.ediadapter.model.v3.PostMessageResponse
 import no.nav.helsemelding.outbound.EdiAdapterError.SendFailure
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
+import no.nav.helsemelding.outbound.FakeEdiMessagePublisher
 import no.nav.helsemelding.outbound.LifecycleError.EdiFailure
 import no.nav.helsemelding.outbound.LifecycleError.MetadataExtractionFailure
 import no.nav.helsemelding.outbound.LifecycleError.MissingExternalReferenceId
@@ -36,13 +37,15 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService = FakeTransactionalMessageStateService()
             ediAdapterClient = FakeEdiAdapterClient()
             messageLifecycleService = MessageLifecycleOrchestratorService(
-                messageStateService,
-                ediAdapterClient,
-                object : Metrics by FakeMetrics() {
+                messageStateService = messageStateService,
+                ediAdapterClient = ediAdapterClient,
+                ediPublisher = FakeEdiMessagePublisher(),
+                metrics = object : Metrics by FakeMetrics() {
                     override fun registerOutgoingMessageFailed(errorType: ErrorTypeTag) {
                         reportedErrors.add(errorType)
                     }
-                }
+                },
+                transportRouter = MessageTransportRouter()
             )
         }
 
@@ -70,7 +73,7 @@ class MessageLifecycleServiceSpec : StringSpec(
             reportedErrors shouldBe emptyList()
         }
 
-        "creates state when the adapter returns a valid message ID" {
+        "creates state when the adapter returns a valid message id" {
             val payload = messageXml.toByteArray()
 
             val messageId = Uuid.random()
@@ -114,7 +117,7 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateService.getMessageSnapshotById(messageId).shouldBeNull()
         }
 
-        "returns a lifecycle error when the response has no message ID" {
+        "returns a lifecycle error when the response has no message id" {
             val messageId = Uuid.random()
             ediAdapterClient.givenPostMessage(Right(PostMessageResponse(null)))
 

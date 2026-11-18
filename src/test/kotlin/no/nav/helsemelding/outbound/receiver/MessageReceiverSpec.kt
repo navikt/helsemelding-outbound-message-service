@@ -1,64 +1,59 @@
 package no.nav.helsemelding.outbound.receiver
 
 import app.cash.turbine.test
-import app.cash.turbine.turbineScope
 import arrow.fx.coroutines.resourceScope
-import io.github.nomisRev.kafka.publisher.KafkaPublisher
-import io.github.nomisRev.kafka.receiver.AutoOffsetReset
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import no.nav.helsemelding.outbound.KafkaSpec
 import no.nav.helsemelding.outbound.config
-import no.nav.helsemelding.outbound.config.Config
-import no.nav.helsemelding.outbound.config.Kafka.SecurityProtocol
-import no.nav.helsemelding.outbound.config.withKafka
-import no.nav.helsemelding.outbound.kafkaReceiver
 import org.apache.kafka.clients.producer.ProducerRecord
 import kotlin.uuid.Uuid
 
-class MessageReceiverSpec : KafkaSpec(
-    {
-        lateinit var config: Config
+class MessageReceiverSpec : KafkaSpec({
+    val topic = config().kafka.topics.dialogMessageOut
 
-        beforeSpec {
-            config = config()
-                .withKafka {
-                    copy(
-                        bootstrapServers = container.bootstrapServers,
-                        securityProtocol = SecurityProtocol("PLAINTEXT")
-                    )
-                }
-        }
+    beforeEach { clearTopic(topic) }
 
-        "One message if record key is a valid uuid - one message" {
-            resourceScope {
-                turbineScope {
-                    val publisher = KafkaPublisher(publisherSettings())
-                    val referenceId = Uuid.random()
-                    val content = "data".toByteArray()
-                    val topic = config.kafka.topics.dialogMessageOut
-                    publisher.publishScope {
-                        publish(
-                            ProducerRecord(
-                                topic,
-                                referenceId.toString(),
-                                content
-                            )
-                        )
-                    }
+    "receives message data" {
+        resourceScope {
+            val publisher = kafkaPublisher()
+            val id = Uuid.random()
+            val payload = "<MsgHead>test</MsgHead>".toByteArray()
+            val record = ProducerRecord(topic, id.toString(), payload).apply {
+                headers().add("sourceSystem", "test-system".toByteArray())
+            }
+            publisher.publishScope { publish(record) }
+            val kafka = kafkaReceiver()
 
-                    val receiver = MessageReceiver(
-                        topic,
-                        kafkaReceiver(config.kafka, AutoOffsetReset.Earliest)
-                    )
-                    val messages = receiver.receiveMessages()
-
-                    messages.test {
-                        val message = awaitItem()
-                        message.id shouldBe referenceId
-                        message.payload shouldBe content
-                    }
-                }
+            MessageReceiver(topic, kafka).receiveMessages().test(timeout = kafkaTimeout) {
+                val received = awaitItem()
+                received.message.id shouldBe id
+                received.message.payload shouldBe payload
+                received.message.sourceSystem shouldBe "test-system"
             }
         }
     }
-)
+
+    "uses UNKNOWN when sourceSystem is missing" {
+        resourceScope {
+            val publisher = kafkaPublisher()
+            publisher.publishScope { publish(ProducerRecord(topic, Uuid.random().toString(), "data".toByteArray())) }
+
+            MessageReceiver(topic, kafkaReceiver()).receiveMessages().test(timeout = kafkaTimeout) {
+                awaitItem().message.sourceSystem shouldBe "UNKNOWN"
+            }
+        }
+    }
+
+    "rejects an invalid message key" {
+        resourceScope {
+            val publisher = kafkaPublisher()
+            publisher.publishScope { publish(ProducerRecord(topic, "invalid", "data".toByteArray())) }
+            val kafka = kafkaReceiver()
+
+            MessageReceiver(topic, kafka).receiveMessages().test(timeout = kafkaTimeout) {
+                awaitError().shouldBeInstanceOf<IllegalArgumentException>()
+            }
+        }
+    }
+})

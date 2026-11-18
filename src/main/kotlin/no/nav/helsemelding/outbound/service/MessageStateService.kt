@@ -2,6 +2,7 @@ package no.nav.helsemelding.outbound.service
 
 import arrow.core.Either
 import no.nav.helsemelding.outbound.LifecycleError
+import no.nav.helsemelding.outbound.LifecycleError.MessageNotFound
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.UpdateState
@@ -11,15 +12,16 @@ import no.nav.helsemelding.outbound.repository.FakeMessageStateTransactionReposi
 import no.nav.helsemelding.outbound.repository.MessageRepository
 import no.nav.helsemelding.outbound.repository.MessageStateHistoryRepository
 import no.nav.helsemelding.outbound.repository.MessageStateTransactionRepository
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 interface MessageStateService {
     /**
-     * Registers a newly accepted message and initializes its tracked external state.
+     * Registers an outgoing message and initializes its tracked external state.
      *
-     * This function persists the initial lifecycle state for an incoming message once the external
-     * adapter has confirmed that the message has been successfully created in the external system
-     * (i.e., an external reference ID has been assigned).
+     * EDI 2.0 messages are registered after the adapter assigns an external reference ID.
+     * EDI 1.0 messages are registered before Kafka publication, with the lifecycle ID as their
+     * external reference and a null publishedAt until publication is confirmed.
      *
      * The call enforces all lifecycle- and uniqueness constraints:
      * - If the lifecycle ID (`createState.id`) already exists with identical external data
@@ -94,6 +96,19 @@ interface MessageStateService {
      *         or `null` if no message with the given ID is being tracked.
      */
     suspend fun getMessageSnapshotById(id: Uuid): MessageStateSnapshot?
+
+    /**
+     * Records confirmed Kafka publication for a previously registered EDI 1.0 message.
+     *
+     * Updates only the message's publication and last-updated timestamps. A repeated call
+     * replaces the stored publication timestamp with [publishedAt].
+     *
+     * @param id The lifecycle ID of the registered message.
+     * @param publishedAt The time at which Kafka publication was confirmed.
+     * @return `Right(Unit)` when publication is recorded, or `Left` with [MessageNotFound]
+     *         if no message is registered with the given ID.
+     */
+    suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit>
 }
 
 class TransactionalMessageStateService(
@@ -101,6 +116,9 @@ class TransactionalMessageStateService(
     private val historyRepository: MessageStateHistoryRepository,
     private val transactionRepository: MessageStateTransactionRepository
 ) : MessageStateService {
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit> =
+        messageRepository.markPublished(id, publishedAt)
+
     override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =
         transactionRepository.createInitialState(createState)
 
@@ -133,6 +151,9 @@ class FakeTransactionalMessageStateService : MessageStateService {
     fun givenInitialState(id: Uuid, either: Either<LifecycleError, MessageStateSnapshot>) {
         messageStateById[id] = either
     }
+
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit> =
+        messageRepository.markPublished(id, publishedAt)
 
     override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =
         messageStateById[createState.id] ?: transactionRepository.createInitialState(createState)

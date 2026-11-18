@@ -26,15 +26,20 @@ import no.nav.helsemelding.outbound.metrics.CustomMetrics
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.plugin.configureMetrics
 import no.nav.helsemelding.outbound.plugin.configureRoutes
+import no.nav.helsemelding.outbound.processor.EdiStatusProcessor
 import no.nav.helsemelding.outbound.processor.MessageProcessor
+import no.nav.helsemelding.outbound.publisher.KafkaEdiMessagePublisher
 import no.nav.helsemelding.outbound.publisher.KafkaErrorMessagePublisher
 import no.nav.helsemelding.outbound.publisher.StatusMessagePublisher
+import no.nav.helsemelding.outbound.receiver.EdiMessageReceiver
 import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.repository.ExposedMessageRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateHistoryRepository
 import no.nav.helsemelding.outbound.repository.ExposedMessageStateTransactionRepository
 import no.nav.helsemelding.outbound.service.MessageLifecycleOrchestratorService
 import no.nav.helsemelding.outbound.service.MessageStateService
+import no.nav.helsemelding.outbound.service.MessageStatusService
+import no.nav.helsemelding.outbound.service.MessageTransportRouter
 import no.nav.helsemelding.outbound.service.MetricsService
 import no.nav.helsemelding.outbound.service.NotificationService
 import no.nav.helsemelding.outbound.service.PrometheusMetricsService
@@ -57,17 +62,21 @@ fun main() = SuspendApp {
 
             val metrics = CustomMetrics(deps.meterRegistry)
 
-            val notificationService = NotificationService(
-                deps.ediAdapterClient,
-                messageStateService(deps.database),
+            val states = messageStateService(deps.database)
+            val statuses = MessageStatusService(
+                states,
                 stateEvaluatorService(),
                 StatusMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
             )
+            val notificationService = NotificationService(deps.ediAdapterClient, states, statuses)
+            val ediPublisher = KafkaEdiMessagePublisher(config().edi.dialogMessageOutTopic, deps.kafkaPublisher)
 
             val messageLifecycleService = MessageLifecycleOrchestratorService(
-                messageStateService = messageStateService(deps.database),
+                messageStateService = states,
                 ediAdapterClient = deps.ediAdapterClient,
-                metrics = metrics
+                metrics = metrics,
+                transportRouter = MessageTransportRouter(),
+                ediPublisher = ediPublisher
             )
 
             val messageProcessor = MessageProcessor(
@@ -75,6 +84,12 @@ fun main() = SuspendApp {
                 messageLifecycleService = messageLifecycleService,
                 metrics = metrics,
                 errorMessagePublisher = KafkaErrorMessagePublisher(config().kafka.topics, deps.kafkaPublisher)
+            )
+
+            val ediStatusProcessor = EdiStatusProcessor(
+                ediMessageReceiver = ediStatusReceiver(deps.kafkaReceiver),
+                messageStateService = states,
+                messageStatusService = statuses
             )
 
             server(
@@ -88,6 +103,8 @@ fun main() = SuspendApp {
 
             messageProcessor.processMessages(scope)
             notificationService.processNotifications(scope)
+            ediStatusProcessor.processStatuses(scope)
+
             scope.launch {
                 scheduleMetricsRefreshing(
                     metricsService(deps.database),
@@ -181,6 +198,14 @@ private fun messageReceiver(
 ): MessageReceiver =
     MessageReceiver(
         config().kafka.topics.dialogMessageOut,
+        kafkaReceiver
+    )
+
+private fun ediStatusReceiver(
+    kafkaReceiver: KafkaReceiver<String, ByteArray>
+): EdiMessageReceiver =
+    EdiMessageReceiver(
+        config().edi.statusMessageTopic,
         kafkaReceiver
     )
 

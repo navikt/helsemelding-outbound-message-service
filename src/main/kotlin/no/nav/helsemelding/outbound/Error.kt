@@ -4,6 +4,7 @@ import no.nav.helsemelding.messageconverter.error.ConversionError
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.MessageDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
+import no.nav.helsemelding.outbound.model.MessageTransport
 import kotlin.uuid.Uuid
 import no.nav.helsemelding.ediadapter.client.EdiAdapterError as ClientEdiAdapterError
 
@@ -48,6 +49,18 @@ sealed interface FetchStatusError : StateError {
     data class UnexpectedReceiverCount(val count: Int) : FetchStatusError
 }
 
+sealed interface EdiStatusError : StateError {
+    data class MessageNotFound(val messageId: Uuid) : EdiStatusError
+
+    data class UnexpectedTransport(val messageId: Uuid, val transport: MessageTransport) : EdiStatusError
+}
+
+sealed interface MessageProcessingError : StateError {
+    data class LifecycleFailure(val cause: LifecycleError) : MessageProcessingError
+
+    data class ErrorPublicationFailure(val cause: PublishError) : MessageProcessingError
+}
+
 sealed interface LifecycleError : StateError {
 
     sealed interface Conflict : LifecycleError
@@ -69,6 +82,10 @@ sealed interface LifecycleError : StateError {
         val reason: String
     ) : LifecycleError
 
+    data class MessageNotFound(
+        val messageId: Uuid
+    ) : LifecycleError
+
     data class MetadataExtractionFailure(val messageId: Uuid, val cause: ConversionError) : LifecycleError
 
     data class MissingExternalReferenceId(val messageId: Uuid) : LifecycleError
@@ -78,6 +95,8 @@ sealed interface LifecycleError : StateError {
     data class EdiFailure(
         val cause: EdiAdapterError
     ) : ExternalFailure
+
+    data class EdiPublishFailure(val messageId: Uuid, val cause: PublishError) : ExternalFailure
 }
 
 fun StateError.withMessageContext(message: MessageState): String = "Message ${message.externalRefId}: $this"
