@@ -110,13 +110,13 @@ class MessageLifecycleOrchestratorService(
         lifecycleId: Uuid,
         payload: ByteArray
     ): MessageStateSnapshot {
-        ediPublisher
+        val recordMetadata = ediPublisher
             .publish(lifecycleId, payload)
             .mapLeft { LifecycleError.EdiPublishFailure(lifecycleId, it) }
             .bind()
 
         messageStateService.markPublished(lifecycleId, Clock.System.now()).bind()
-        log.info { "messageId=$lifecycleId Successfully published EDI 1.0 message" }
+        log.info { "messageId=$lifecycleId topic=${recordMetadata.topic()} Successfully published EDI 1.0 message" }
         return ensureNotNull(messageStateService.getMessageSnapshotById(lifecycleId)) {
             LifecycleError.MessageNotFound(lifecycleId)
         }
