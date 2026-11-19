@@ -18,6 +18,7 @@ data class Config(
     val server: Server,
     val metrics: Metrics,
     val database: Database,
+    val edi: Edi,
     val ediAdapter: EdiAdapter
 )
 
@@ -89,8 +90,6 @@ data class Kafka(
         }
 }
 
-fun Config.withKafka(update: Kafka.() -> Kafka) = copy(kafka = kafka.update())
-
 data class Topics(
     val dialogMessageOut: String,
     val statusMessage: String,
@@ -115,6 +114,12 @@ data class EdiAdapter(
     @JvmInline
     value class SenderHerId(val value: Int)
 }
+
+data class Edi(
+    val dialogMessageOutTopic: String,
+    val statusMessageTopic: String,
+    val receiverHerIds: List<Int> = emptyList()
+)
 
 data class Metrics(
     val metricsUpdatingInterval: Duration

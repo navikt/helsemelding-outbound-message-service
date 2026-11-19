@@ -4,7 +4,6 @@ import arrow.core.Either
 import arrow.core.raise.Raise
 import arrow.core.raise.either
 import arrow.core.raise.ensureNotNull
-import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import no.nav.helsemelding.ediadapter.client.EdiAdapterClient
@@ -18,9 +17,13 @@ import no.nav.helsemelding.outbound.LifecycleError.EdiFailure
 import no.nav.helsemelding.outbound.metrics.ErrorTypeTag
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.model.CreateState
+import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
+import no.nav.helsemelding.outbound.model.MessageTransport
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
+import no.nav.helsemelding.outbound.publisher.EdiMessagePublisher
 import kotlin.io.encoding.Base64
+import kotlin.time.Clock
 import kotlin.time.measureTimedValue
 import kotlin.uuid.Uuid
 
@@ -30,10 +33,11 @@ private const val BASE64_ENCODING = "base64"
 
 interface MessageLifecycleService {
     /**
-     * Extracts metadata from [payload], sends the XML through the EDI adapter,
-     * and stores the initial lifecycle state under [lifecycleId].
+     * Routes and sends XML through the EDI adapter or Kafka, tracking it under [lifecycleId].
+     * EDI 1.0 messages are registered before publication to allow immediate status responses.
      *
-     * Returns an existing snapshot without sending again when [lifecycleId] is already stored.
+     * Returns the existing snapshot for a registered EDI 2.0 message or a confirmed EDI 1.0 publication.
+     * An EDI 1.0 message whose publication was not confirmed may be republished with the same correlation ID.
      * Sending and persistence are not atomic: concurrent registrations or retries after
      * a successful send followed by failed persistence may send the message again.
      */
@@ -46,6 +50,8 @@ interface MessageLifecycleService {
 class MessageLifecycleOrchestratorService(
     private val messageStateService: MessageStateService,
     private val ediAdapterClient: EdiAdapterClient,
+    private val ediPublisher: EdiMessagePublisher,
+    private val transportRouter: MessageTransportRouter,
     private val metrics: Metrics,
     private val metadataExtractor: MetadataExtractor = MsgHeadMessageConverter()
 ) : MessageLifecycleService {
@@ -53,21 +59,68 @@ class MessageLifecycleOrchestratorService(
     override suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
         payload: ByteArray
-    ): Either<LifecycleError, MessageStateSnapshot> =
-        messageStateService.getMessageSnapshotById(lifecycleId)
-            ?.also { logExistingState(lifecycleId) }
-            ?.right()
-            ?: registerNewMessage(lifecycleId, payload)
-
-    private suspend fun registerNewMessage(
-        lifecycleId: Uuid,
-        payload: ByteArray
     ): Either<LifecycleError, MessageStateSnapshot> = either {
-        val metadata = extractMetadata(lifecycleId, payload)
-        val externalRefId = sendMessage(lifecycleId, metadata.toRequest(payload))
-        initializeState(lifecycleId, externalRefId)
+        when (val messageStateSnapshot = messageStateService.getMessageSnapshotById(lifecycleId)) {
+            null -> registerNewMessage(lifecycleId, payload)
+            else -> registerExistingMessage(messageStateSnapshot, payload)
+        }
     }
         .onLeft { reportFailure(lifecycleId, it) }
+
+    private suspend fun Raise<LifecycleError>.registerExistingMessage(
+        existing: MessageStateSnapshot,
+        payload: ByteArray
+    ): MessageStateSnapshot {
+        val message = existing.messageState
+        return when {
+            message.needsEdiPublication() -> publishToEdi(message.id, payload)
+            else -> existing.also { logExistingState(message.id) }
+        }
+    }
+
+    private suspend fun Raise<LifecycleError>.registerNewMessage(
+        lifecycleId: Uuid,
+        payload: ByteArray
+    ): MessageStateSnapshot {
+        val metadata = extractMetadata(lifecycleId, payload)
+        return when (transportRouter.route(metadata.receiverHerIds)) {
+            MessageTransport.EDI_1_0 -> registerEdiMessage(lifecycleId, payload)
+            MessageTransport.EDI_2_0 -> registerEdiAdapterMessage(lifecycleId, metadata, payload)
+        }
+    }
+
+    private suspend fun Raise<LifecycleError>.registerEdiMessage(
+        lifecycleId: Uuid,
+        payload: ByteArray
+    ): MessageStateSnapshot {
+        initializeState(lifecycleId, lifecycleId, MessageTransport.EDI_1_0)
+        return publishToEdi(lifecycleId, payload)
+    }
+
+    private suspend fun Raise<LifecycleError>.registerEdiAdapterMessage(
+        lifecycleId: Uuid,
+        metadata: MessageMetadata,
+        payload: ByteArray
+    ): MessageStateSnapshot {
+        val externalRefId = sendMessage(lifecycleId, metadata.toRequest(payload))
+        return initializeState(lifecycleId, externalRefId, MessageTransport.EDI_2_0)
+    }
+
+    private suspend fun Raise<LifecycleError>.publishToEdi(
+        lifecycleId: Uuid,
+        payload: ByteArray
+    ): MessageStateSnapshot {
+        val recordMetadata = ediPublisher
+            .publish(lifecycleId, payload)
+            .mapLeft { LifecycleError.EdiPublishFailure(lifecycleId, it) }
+            .bind()
+
+        messageStateService.markPublished(lifecycleId, Clock.System.now()).bind()
+        log.info { "messageId=$lifecycleId topic=${recordMetadata.topic()} Successfully published EDI 1.0 message" }
+        return ensureNotNull(messageStateService.getMessageSnapshotById(lifecycleId)) {
+            LifecycleError.MessageNotFound(lifecycleId)
+        }
+    }
 
     private fun Raise<LifecycleError>.extractMetadata(
         lifecycleId: Uuid,
@@ -106,17 +159,22 @@ class MessageLifecycleOrchestratorService(
 
     private suspend fun Raise<LifecycleError>.initializeState(
         lifecycleId: Uuid,
-        externalRefId: Uuid
+        externalRefId: Uuid,
+        transport: MessageTransport
     ): MessageStateSnapshot =
         messageStateService.createInitialState(
             CreateState(
                 id = lifecycleId,
                 externalRefId = externalRefId,
-                messageType = DIALOG
+                messageType = DIALOG,
+                transport = transport
             )
         )
             .bind()
             .also { logStateInitialized(lifecycleId, externalRefId) }
+
+    private fun MessageState.needsEdiPublication(): Boolean =
+        transport.isEdi10() && publishedAt == null && externalDeliveryState == null && appRecStatus == null
 
     private fun logExistingState(lifecycleId: Uuid) {
         log.debug { "messageId=$lifecycleId Returning existing lifecycle state" }
@@ -134,7 +192,9 @@ class MessageLifecycleOrchestratorService(
         val errorType = when (error) {
             is LifecycleError.MetadataExtractionFailure -> ErrorTypeTag.METADATA_EXTRACTION_FAILED
             is EdiFailure -> ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED
+            is LifecycleError.EdiPublishFailure -> ErrorTypeTag.SENDING_TO_EDI_FAILED
             is LifecycleError.MissingExternalReferenceId -> ErrorTypeTag.EXTERNAL_REFERENCE_VALIDATION_FAILED
+            is LifecycleError.MessageNotFound, is LifecycleError.UnexpectedPublicationTransport -> ErrorTypeTag.STATE_LOOKUP_FAILED
             is LifecycleError.Conflict, is LifecycleError.PersistenceFailure -> ErrorTypeTag.STATE_INITIALIZATION_FAILED
         }
         log.error { "messageId=$lifecycleId Failed registering message ($errorType): $error" }

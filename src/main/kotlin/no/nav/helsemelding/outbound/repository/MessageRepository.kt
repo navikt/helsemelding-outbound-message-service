@@ -3,19 +3,28 @@ package no.nav.helsemelding.outbound.repository
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
+import arrow.core.raise.ensure
+import arrow.core.raise.ensureNotNull
 import arrow.core.right
 import no.nav.helsemelding.outbound.LifecycleError
+import no.nav.helsemelding.outbound.LifecycleError.MessageNotFound
+import no.nav.helsemelding.outbound.LifecycleError.UnexpectedPublicationTransport
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
+import no.nav.helsemelding.outbound.model.MessageTransport
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_1_0
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.MessageType
 import no.nav.helsemelding.outbound.repository.Messages.appRecStatus
 import no.nav.helsemelding.outbound.repository.Messages.externalDeliveryState
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.datetime.CurrentTimestamp
 import org.jetbrains.exposed.v1.datetime.timestamp
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -23,6 +32,7 @@ import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
+import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.updateReturning
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
@@ -33,6 +43,11 @@ object Messages : Table("messages") {
 
     val externalRefId = uuid("external_reference_id")
         .uniqueIndex()
+
+    val transport = varchar("transport", 100)
+        .transform(wrap = { MessageTransport.fromValue(it) }, unwrap = { it.value })
+
+    val publishedAt = timestamp("published_at").nullable()
 
     val messageType = enumerationByName("message_type", 100, MessageType::class)
 
@@ -52,7 +67,8 @@ interface MessageRepository {
         id: Uuid,
         externalRefId: Uuid,
         messageType: MessageType,
-        lastStateChange: Instant
+        lastStateChange: Instant,
+        transport: MessageTransport = EDI_2_0
     ): Either<LifecycleError, CreateStateResult>
 
     suspend fun updateState(
@@ -63,6 +79,8 @@ interface MessageRepository {
     ): MessageState
 
     suspend fun findByExternalReferenceId(externalRefId: Uuid): MessageState?
+
+    suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit>
 
     suspend fun findById(id: Uuid): MessageState?
 
@@ -79,7 +97,8 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         id: Uuid,
         externalRefId: Uuid,
         messageType: MessageType,
-        lastStateChange: Instant
+        lastStateChange: Instant,
+        transport: MessageTransport
     ): Either<LifecycleError, CreateStateResult> = either {
         findById(id)?.let { existing ->
             return lifecycleId(
@@ -93,6 +112,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             insert[Messages.id] = id
             insert[Messages.externalRefId] = externalRefId
             insert[Messages.messageType] = messageType
+            insert[Messages.transport] = transport
             insert[Messages.externalDeliveryState] = null
             insert[Messages.appRecStatus] = null
             insert[Messages.lastStateChange] = lastStateChange
@@ -129,16 +149,17 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             ?.toMessageState()
     }
 
-    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = suspendTransaction(database) {
-        Messages
-            .select(externalDeliveryState, Messages.id.count())
-            .groupBy(externalDeliveryState)
-            .associate { row ->
-                val state = row[externalDeliveryState]
-                val count = row[Messages.id.count()]
-                state to count
-            }
-    }
+    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> =
+        suspendTransaction(database) {
+            Messages
+                .select(externalDeliveryState, Messages.id.count())
+                .groupBy(externalDeliveryState)
+                .associate { row ->
+                    val state = row[externalDeliveryState]
+                    val count = row[Messages.id.count()]
+                    state to count
+                }
+        }
 
     override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> = suspendTransaction(database) {
         Messages
@@ -202,6 +223,24 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             .left()
     }
 
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> =
+        suspendTransaction(database) {
+            either {
+                val updatedRows = Messages.update(
+                    where = { (Messages.id eq id) and (Messages.transport eq EDI_1_0) and Messages.publishedAt.isNull() }
+                ) { update ->
+                    update[Messages.publishedAt] = publishedAt
+                    update[Messages.updatedAt] = CurrentTimestamp
+                }
+                if (updatedRows == 0) {
+                    val message = ensureNotNull(findById(id)) { MessageNotFound(id) }
+                    ensure(message.transport.isEdi10()) {
+                        UnexpectedPublicationTransport(id, message.transport)
+                    }
+                }
+            }
+        }
+
     override suspend fun findById(id: Uuid): MessageState? = suspendTransaction(database) {
         Messages
             .selectAll().where { Messages.id eq id }
@@ -217,7 +256,9 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         this[appRecStatus],
         this[Messages.lastStateChange],
         this[Messages.createdAt],
-        this[Messages.updatedAt]
+        this[Messages.updatedAt],
+        this[Messages.transport],
+        this[Messages.publishedAt]
     )
 }
 
@@ -226,13 +267,15 @@ class FakeMessageRepository : MessageRepository {
     private val byExternalRefId = mutableMapOf<Uuid, Uuid>()
     private var countByExternalDeliveryState = mutableMapOf<ExternalDeliveryState?, Long>()
     private var countByAppRecStatus = mutableMapOf<AppRecStatus?, Long>()
-    private var countByExternalDeliveryStateAndAppRecStatus = mutableMapOf<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>()
+    private var countByExternalDeliveryStateAndAppRecStatus =
+        mutableMapOf<Pair<ExternalDeliveryState?, AppRecStatus?>, Long>()
 
     override suspend fun createState(
         id: Uuid,
         externalRefId: Uuid,
         messageType: MessageType,
-        lastStateChange: Instant
+        lastStateChange: Instant,
+        transport: MessageTransport
     ): Either<LifecycleError, CreateStateResult> {
         val existingById = messagesById[id]
         if (existingById != null) {
@@ -262,7 +305,8 @@ class FakeMessageRepository : MessageRepository {
             appRecStatus = null,
             lastStateChange = lastStateChange,
             createdAt = lastStateChange,
-            updatedAt = lastStateChange
+            updatedAt = lastStateChange,
+            transport = transport
         )
 
         messagesById[id] = newMessage
@@ -295,15 +339,26 @@ class FakeMessageRepository : MessageRepository {
         return messagesById[messageId]
     }
 
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> {
+        val existing = messagesById[id] ?: return MessageNotFound(id).left()
+        if (!existing.transport.isEdi10()) return UnexpectedPublicationTransport(id, existing.transport).left()
+        if (existing.publishedAt == null) {
+            messagesById[id] = existing.copy(publishedAt = publishedAt, updatedAt = publishedAt)
+        }
+        return Unit.right()
+    }
+
     override suspend fun findById(id: Uuid): MessageState? {
         return messagesById[id]
     }
 
-    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> = countByExternalDeliveryState
+    override suspend fun countByExternalDeliveryState(): Map<ExternalDeliveryState?, Long> =
+        countByExternalDeliveryState
 
     override suspend fun countByAppRecState(): Map<AppRecStatus?, Long> = countByAppRecStatus
 
-    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> = countByExternalDeliveryStateAndAppRecStatus
+    override suspend fun countByExternalDeliveryStateAndAppRecStatus(): Map<Pair<ExternalDeliveryState?, AppRecStatus?>, Long> =
+        countByExternalDeliveryStateAndAppRecStatus
 
     fun setCountByExternalDeliveryState(values: Map<ExternalDeliveryState?, Long>) {
         countByExternalDeliveryState = values.toMutableMap()

@@ -1,5 +1,6 @@
 package no.nav.helsemelding.outbound.model
 
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.NextStateDecision.Transition
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
@@ -12,7 +13,9 @@ data class MessageState(
     val appRecStatus: AppRecStatus?,
     val lastStateChange: Instant,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val transport: MessageTransport = EDI_2_0,
+    val publishedAt: Instant? = null
 )
 
 fun MessageState.formatUnchanged(): String = "${logPrefix()} No state transition (no persisted change)"
