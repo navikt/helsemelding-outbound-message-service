@@ -62,7 +62,7 @@ kind: Topic
 metadata:
   labels:
     team: helsemelding
-  name: dialog.out.status.edi1
+  name: dialog.out.xml.status.edi1
   namespace: helsemelding
 spec:
   pool: nav-dev
