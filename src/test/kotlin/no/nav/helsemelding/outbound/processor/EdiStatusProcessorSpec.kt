@@ -85,16 +85,16 @@ class EdiStatusProcessorSpec : StringSpec({
             processor.processStatus(id, statusEvent).shouldBeRight()
 
             publisher.published.count { it.messageId == id } shouldBe 1
-            val event = publisher.published.last()
-            event.status shouldBe expected
-            event.apprec!!.status shouldBe appRec.name
-            event.apprec.receiverHerId shouldBe 700
-            event.apprec.errorList shouldBe errors
-            event.apprec.id shouldBe null
-            val stored = states.getMessageSnapshotById(id)!!
-            stored.messageState.externalDeliveryState shouldBe ExternalDeliveryState.ACKNOWLEDGED
-            stored.messageState.appRecStatus shouldBe appRec
-            stored.messageStateChanges.size shouldBe 2
+            val publishedStatusEvent = publisher.published.last()
+            publishedStatusEvent.status shouldBe expected
+            publishedStatusEvent.apprec!!.status shouldBe appRec.name
+            publishedStatusEvent.apprec.receiverHerId shouldBe 700
+            publishedStatusEvent.apprec.errorList shouldBe errors
+            publishedStatusEvent.apprec.id shouldBe null
+            val messageStateSnapshot = states.getMessageSnapshotById(id)!!
+            messageStateSnapshot.messageState.externalDeliveryState shouldBe ExternalDeliveryState.ACKNOWLEDGED
+            messageStateSnapshot.messageState.appRecStatus shouldBe appRec
+            messageStateSnapshot.messageStateChanges.size shouldBe 2
         }
     }
 
@@ -108,17 +108,17 @@ class EdiStatusProcessorSpec : StringSpec({
         processor.processStatus(id, EdiStatusEvent(REJECTED_TRANSPORT)).shouldBeRight()
         processor.processStatus(id, EdiStatusEvent(ACKNOWLEDGED)).shouldBeRight()
 
-        val event = publisher.published.single()
-        event.messageId shouldBe id
-        event.status shouldBe MessageStatus.REJECTED_TRANSPORT
-        event.apprec shouldBe null
-        event.error!!.code shouldBe "TRANSPORT_REJECTED"
-        val stored = states.getMessageSnapshotById(id)!!
-        stored.messageState.externalDeliveryState shouldBe ExternalDeliveryState.REJECTED
-        stored.messageState.appRecStatus shouldBe null
-        stored.messageStateChanges.size shouldBe 2
-        stored.messageStateChanges.last().newDeliveryState shouldBe ExternalDeliveryState.REJECTED
-        stored.messageStateChanges.last().newAppRecStatus shouldBe null
+        val publishedStatusEvent = publisher.published.single()
+        publishedStatusEvent.messageId shouldBe id
+        publishedStatusEvent.status shouldBe MessageStatus.REJECTED_TRANSPORT
+        publishedStatusEvent.apprec shouldBe null
+        publishedStatusEvent.error!!.code shouldBe "TRANSPORT_REJECTED"
+        val messageStateSnapshot = states.getMessageSnapshotById(id)!!
+        messageStateSnapshot.messageState.externalDeliveryState shouldBe ExternalDeliveryState.REJECTED
+        messageStateSnapshot.messageState.appRecStatus shouldBe null
+        messageStateSnapshot.messageStateChanges.size shouldBe 2
+        messageStateSnapshot.messageStateChanges.last().newDeliveryState shouldBe ExternalDeliveryState.REJECTED
+        messageStateSnapshot.messageStateChanges.last().newAppRecStatus shouldBe null
     }
 
     "unknown messages and statuses for EDI 2 messages return typed errors" {
