@@ -177,11 +177,11 @@ class MessageStateTransactionRepositorySpec : StringSpec({
             val publishedAt = Clock.System.now()
             messageRepository.markPublished(id, publishedAt).shouldBeRight()
 
-            val stored = messageRepository.findById(id)!!
-            stored.publishedAt!! shouldBeInstant publishedAt
-            stored.transport shouldBe EDI_1_0
-            stored.externalRefId shouldBe id
-            stored.appRecStatus shouldBe OK
+            val storedMessage = messageRepository.findById(id)!!
+            storedMessage.publishedAt!! shouldBeInstant publishedAt
+            storedMessage.transport shouldBe EDI_1_0
+            storedMessage.externalRefId shouldBe id
+            storedMessage.appRecStatus shouldBe OK
             historyRepository.findAll(id).size shouldBe 2
         }
     }
