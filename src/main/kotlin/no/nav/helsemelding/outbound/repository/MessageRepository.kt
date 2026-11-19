@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.raise.ensure
+import arrow.core.raise.ensureNotNull
 import arrow.core.right
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.LifecycleError.MessageNotFound
@@ -23,6 +24,7 @@ import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.datetime.CurrentTimestamp
 import org.jetbrains.exposed.v1.datetime.timestamp
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -225,15 +227,15 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         suspendTransaction(database) {
             either {
                 val updatedRows = Messages.update(
-                    where = { (Messages.id eq id) and (Messages.transport eq EDI_1_0) }
+                    where = { (Messages.id eq id) and (Messages.transport eq EDI_1_0) and Messages.publishedAt.isNull() }
                 ) { update ->
                     update[Messages.publishedAt] = publishedAt
                     update[Messages.updatedAt] = CurrentTimestamp
                 }
-                ensure(updatedRows > 0) {
-                    when (val message = findById(id)) {
-                        null -> MessageNotFound(id)
-                        else -> UnexpectedPublicationTransport(id, message.transport)
+                if (updatedRows == 0) {
+                    val message = ensureNotNull(findById(id)) { MessageNotFound(id) }
+                    ensure(message.transport.isEdi10()) {
+                        UnexpectedPublicationTransport(id, message.transport)
                     }
                 }
             }
@@ -340,7 +342,9 @@ class FakeMessageRepository : MessageRepository {
     override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> {
         val existing = messagesById[id] ?: return MessageNotFound(id).left()
         if (!existing.transport.isEdi10()) return UnexpectedPublicationTransport(id, existing.transport).left()
-        messagesById[id] = existing.copy(publishedAt = publishedAt, updatedAt = publishedAt)
+        if (existing.publishedAt == null) {
+            messagesById[id] = existing.copy(publishedAt = publishedAt, updatedAt = publishedAt)
+        }
         return Unit.right()
     }
 

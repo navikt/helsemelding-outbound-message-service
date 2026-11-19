@@ -17,6 +17,7 @@ import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_1_0
 import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.shouldBeInstant
@@ -24,6 +25,7 @@ import no.nav.helsemelding.outbound.shouldBeRightOfType
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.testcontainers.containers.PostgreSQLContainer
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 class MessageRepositorySpec : StringSpec(
@@ -240,6 +242,26 @@ class MessageRepositorySpec : StringSpec(
 
                     messageRepository.findByExternalReferenceId(externalRefId)!!.externalRefId shouldBe externalRefId
                 }
+            }
+        }
+
+        "Mark published - repeated calls preserve the first publication timestamp" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+                val messageRepository = ExposedMessageRepository(database)
+                val id = Uuid.random()
+                val now = Clock.System.now()
+
+                suspendTransaction(database) {
+                    messageRepository.createState(id, id, DIALOG, now, transport = EDI_1_0).shouldBeRight()
+                }
+
+                messageRepository.markPublished(id, now).shouldBeRight()
+                val firstPublication = messageRepository.findById(id).shouldNotBeNull()
+                firstPublication.publishedAt.shouldNotBeNull() shouldBeInstant now
+
+                messageRepository.markPublished(id, now + 1.seconds).shouldBeRight()
+                messageRepository.findById(id) shouldBe firstPublication
             }
         }
 

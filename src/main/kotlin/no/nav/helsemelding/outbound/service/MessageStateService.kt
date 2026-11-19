@@ -100,13 +100,13 @@ interface MessageStateService {
     /**
      * Records confirmed Kafka publication for a previously registered EDI 1.0 message.
      *
-     * Updates only the message's publication and last-updated timestamps. A repeated call
-     * replaces the stored publication timestamp with [publishedAt].
+     * The first call stores [publishedAt] and updates the last-updated timestamp.
+     * Subsequent calls succeed and preserve the recorded publication timestamp.
      *
      * @param id The lifecycle ID of the registered message.
      * @param publishedAt The time at which Kafka publication was confirmed.
-     * @return `Right(Unit)` when publication is recorded. Returns [MessageNotFound] for an unknown
-     *         lifecycle ID or [LifecycleError.UnexpectedPublicationTransport] for an EDI 2.0 message.
+     * @return `Right(Unit)` when publication has been recorded. Returns [MessageNotFound] for an
+     *         unknown lifecycle ID or [LifecycleError.UnexpectedPublicationTransport] for an EDI 2.0 message.
      */
     suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit>
 }
