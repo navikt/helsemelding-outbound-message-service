@@ -63,172 +63,198 @@ class NotificationServiceSpec : StringSpec(
         val senderHerId = config().ediAdapter.senderHerId.value
 
         "incoming notifications are preserved and unknown outgoing status notifications are deleted" {
-            val (client, states, publisher, service) = fixture()
-            val knownRef = Uuid.random()
-            val initial = states.createInitialState(CreateState(Uuid.random(), knownRef, DIALOG)).shouldBeRight()
-            val incoming = listOf(null, knownRef).flatMap { ref ->
-                listOf(notification(ref, NotificationType.NEW_MESSAGE), notification(ref, NotificationType.REFUSED_MESSAGE))
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
+            val knownExternalRef = Uuid.random()
+            val initial = messageService.createInitialState(
+                CreateState(
+                    Uuid.random(),
+                    knownExternalRef,
+                    DIALOG
+                )
+            )
+                .shouldBeRight()
+
+            val incoming = listOf(null, knownExternalRef).flatMap { ref ->
+                listOf(
+                    notification(ref, NotificationType.NEW_MESSAGE),
+                    notification(ref, NotificationType.REFUSED_MESSAGE)
+                )
             }
-            val outgoing = listOf(MESSAGE_SENT_STATE_UPDATED, MESSAGE_APPREC_INFO_UPDATED, MESSAGE_DELIVERY_STATE_UPDATED)
+            val outgoing = listOf(
+                MESSAGE_SENT_STATE_UPDATED,
+                MESSAGE_APPREC_INFO_UPDATED,
+                MESSAGE_DELIVERY_STATE_UPDATED
+            )
                 .flatMap { type -> listOf(notification(null, type), notification(Uuid.random(), type)) }
-            client.notifications = (incoming + outgoing).map { it.right() }.asFlow()
 
-            service.processNotifications(this).join()
+            ediAdapterClient.notifications = (incoming + outgoing).map { it.right() }.asFlow()
 
-            client.notificationRequests shouldBe listOf(listOf(senderHerId))
-            client.deleteRequests shouldBe outgoing.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
-            client.statusRequests shouldBe emptyList()
-            publisher.published shouldBe emptyList()
-            states.getMessageSnapshotByExternalRefId(knownRef) shouldBe initial
+            notificationService.processNotifications(this).join()
+
+            ediAdapterClient.notificationRequests shouldBe listOf(listOf(senderHerId))
+            ediAdapterClient.deleteRequests shouldBe outgoing.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
+            ediAdapterClient.statusRequests shouldBe emptyList()
+            statusPublisher.published shouldBe emptyList()
+            messageService.getMessageSnapshotByExternalRefId(knownExternalRef) shouldBe initial
         }
 
         "apprec is marked as downloaded after state change and before notification deletion" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefId = Uuid.random()
             val appRecId = Uuid.random()
             val notification = notification(externalRefId)
-            states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, appRecId)
-            client.notifications = flowOf(notification.right())
-            client.beforeMarkDownloaded = {
-                publisher.published.single().status shouldBe MessageStatus.COMPLETED
-                val messageStateSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+            messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, appRecId)
+            ediAdapterClient.notifications = flowOf(notification.right())
+            ediAdapterClient.beforeMarkDownloaded = {
+                statusPublisher.published.single().status shouldBe MessageStatus.COMPLETED
+                val messageStateSnapshot = messageService.getMessageSnapshotByExternalRefId(externalRefId)!!
                 messageStateSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
-                client.deleteRequests shouldBe emptyList()
+                ediAdapterClient.deleteRequests shouldBe emptyList()
             }
-            client.beforeDeleteNotifications = {
-                client.downloadedRequests.single().first shouldBe appRecId
-                val messageStateSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+            ediAdapterClient.beforeDeleteNotifications = {
+                ediAdapterClient.downloadedRequests.single().first shouldBe appRecId
+                val messageStateSnapshot = messageService.getMessageSnapshotByExternalRefId(externalRefId)!!
                 messageStateSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
             }
 
-            service.processNotifications(this).join()
+            notificationService.processNotifications(this).join()
 
-            client.downloadedRequests.single().first shouldBe appRecId
-            client.downloadedRequests.single().second.receiverHerId shouldBe senderHerId
-            client.deleteRequests shouldBe listOf(DeleteNotificationsRequest(listOf(notification.notificationId)))
+            ediAdapterClient.downloadedRequests.single().first shouldBe appRecId
+            ediAdapterClient.downloadedRequests.single().second.receiverHerId shouldBe senderHerId
+            ediAdapterClient.deleteRequests shouldBe listOf(DeleteNotificationsRequest(listOf(notification.notificationId)))
         }
 
         "failure to mark apprec as downloaded does not block state updates or notification deletion" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefId = Uuid.random()
             val appRecId = Uuid.random()
             val notification = notification(externalRefId)
-            states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, appRecId)
-            client.notifications = flowOf(notification.right())
-            client.downloadError = EdiAdapterError.Api(503)
+            messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, appRecId)
+            ediAdapterClient.notifications = flowOf(notification.right())
+            ediAdapterClient.downloadError = EdiAdapterError.Api(503)
 
-            service.processNotifications(this).join()
+            notificationService.processNotifications(this).join()
 
-            client.deleteRequests shouldBe listOf(DeleteNotificationsRequest(listOf(notification.notificationId)))
-            val messageStateSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+            ediAdapterClient.deleteRequests shouldBe listOf(DeleteNotificationsRequest(listOf(notification.notificationId)))
+            val messageStateSnapshot = messageService.getMessageSnapshotByExternalRefId(externalRefId)!!
             messageStateSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
-            publisher.published.size shouldBe 1
-            client.downloadedRequests.single().first shouldBe appRecId
+            statusPublisher.published.size shouldBe 1
+            ediAdapterClient.downloadedRequests.single().first shouldBe appRecId
         }
 
         "status fetch failure stops collection without deleting the failed notification" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefId = Uuid.random()
             val skipped = notification(null, NotificationType.NEW_MESSAGE)
-            val initial = states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatusError(externalRefId, EdiAdapterError.Api(503))
-            client.notifications = flowOf(
+            val initial =
+                messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatusError(externalRefId, EdiAdapterError.Api(503))
+            ediAdapterClient.notifications = flowOf(
                 skipped.right(),
                 notification(externalRefId).right(),
                 notification(null).right()
             )
 
             shouldThrow<NotificationProcessingException> {
-                coroutineScope { service.processNotifications(this).join() }
+                coroutineScope { notificationService.processNotifications(this).join() }
             }
 
-            states.getMessageSnapshotByExternalRefId(externalRefId) shouldBe initial
-            client.deleteRequests shouldBe emptyList()
-            client.statusRequests shouldBe listOf(externalRefId)
-            publisher.published shouldBe emptyList()
+            messageService.getMessageSnapshotByExternalRefId(externalRefId) shouldBe initial
+            ediAdapterClient.deleteRequests shouldBe emptyList()
+            ediAdapterClient.statusRequests shouldBe listOf(externalRefId)
+            statusPublisher.published shouldBe emptyList()
         }
 
         "failed publication leaves state unchanged and replay processes the remaining notifications" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val refs = List(2) { Uuid.random() }
             val initial = refs.map { ref ->
-                states.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
+                messageService.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
             }
             val notifications = refs.map { notification(it) }
-            refs.forEach { client.givenStatus(it, DeliveryState.ACKNOWLEDGED, OK) }
-            client.notifications = notifications.map { it.right() }.asFlow()
-            publisher.failNext = true
+            refs.forEach { ediAdapterClient.givenStatus(it, DeliveryState.ACKNOWLEDGED, OK) }
+            ediAdapterClient.notifications = notifications.map { it.right() }.asFlow()
+            statusPublisher.failNext = true
 
             shouldThrow<NotificationProcessingException> {
-                coroutineScope { service.processNotifications(this).join() }
+                coroutineScope { notificationService.processNotifications(this).join() }
             }
 
-            refs.map { states.getMessageSnapshotByExternalRefId(it) } shouldBe initial
-            client.statusRequests shouldBe listOf(refs.first())
-            client.deleteRequests shouldBe emptyList()
-            publisher.published shouldBe emptyList()
+            refs.map { messageService.getMessageSnapshotByExternalRefId(it) } shouldBe initial
+            ediAdapterClient.statusRequests shouldBe listOf(refs.first())
+            ediAdapterClient.deleteRequests shouldBe emptyList()
+            statusPublisher.published shouldBe emptyList()
 
-            notificationService(client, states, publisher).processNotifications(this).join()
+            createNotificationService(ediAdapterClient, messageService, statusPublisher)
+                .processNotifications(this).join()
 
-            publisher.published.map { it.messageId } shouldBe initial.map { it.messageState.id }
-            publisher.published.map { it.status } shouldBe List(2) { MessageStatus.COMPLETED }
-            client.statusRequests shouldBe listOf(refs.first()) + refs
-            client.deleteRequests shouldBe notifications.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
+            statusPublisher.published.map { it.messageId } shouldBe initial.map { it.messageState.id }
+            statusPublisher.published.map { it.status } shouldBe List(2) { MessageStatus.COMPLETED }
+            ediAdapterClient.statusRequests shouldBe listOf(refs.first()) + refs
+            ediAdapterClient.deleteRequests shouldBe notifications.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
         }
 
         "notification deletion failure does not stop processing and replay does not republish" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefIds = listOf(Uuid.random(), Uuid.random())
             for (externalRefId in externalRefIds) {
-                states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-                client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
+                messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+                ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
             }
             val notifications = externalRefIds.map { notification(it) }
             val deleteRequests = notifications.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
-            client.notifications = notifications.map { it.right() }.asFlow()
-            client.deleteError = EdiAdapterError.Api(503)
+            ediAdapterClient.notifications = notifications.map { it.right() }.asFlow()
+            ediAdapterClient.deleteError = EdiAdapterError.Api(503)
 
-            service.processNotifications(this).join()
+            notificationService.processNotifications(this).join()
 
-            publisher.published.map { it.status } shouldBe listOf(MessageStatus.COMPLETED, MessageStatus.COMPLETED)
-            client.statusRequests shouldBe externalRefIds
-            client.deleteRequests shouldBe deleteRequests
+            statusPublisher.published.map { it.status } shouldBe listOf(
+                MessageStatus.COMPLETED,
+                MessageStatus.COMPLETED
+            )
+            ediAdapterClient.statusRequests shouldBe externalRefIds
+            ediAdapterClient.deleteRequests shouldBe deleteRequests
             for (externalRefId in externalRefIds) {
-                val messageSnapshot = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+                val messageSnapshot = messageService.getMessageSnapshotByExternalRefId(externalRefId)!!
                 messageSnapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
             }
 
-            client.deleteError = null
-            val restarted = notificationService(client, states, publisher)
+            ediAdapterClient.deleteError = null
+            val restarted = createNotificationService(ediAdapterClient, messageService, statusPublisher)
             restarted.processNotifications(this).join()
 
-            publisher.published.size shouldBe 2
-            client.statusRequests shouldBe externalRefIds
-            client.deleteRequests shouldBe deleteRequests + deleteRequests
+            statusPublisher.published.size shouldBe 2
+            ediAdapterClient.statusRequests shouldBe externalRefIds
+            ediAdapterClient.deleteRequests shouldBe deleteRequests + deleteRequests
         }
 
         "state persistence failure leaves the notification undeleted" {
-            val (client, states, publisher) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher) = fixture()
             val externalRefId = Uuid.random()
-            val initial = states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, Uuid.random())
-            client.notifications = flowOf(notification(externalRefId).right(), notification(null).right())
+            val initial =
+                messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK, Uuid.random())
+            ediAdapterClient.notifications = flowOf(notification(externalRefId).right(), notification(null).right())
             val failure = IllegalStateException("State persistence failed")
-            val failingStates = object : MessageStateService by states {
+            val failingMessageService = object : MessageStateService by messageService {
                 override suspend fun recordStateChange(updateState: UpdateState): MessageStateSnapshot = throw failure
             }
-            val service = notificationService(client, failingStates, publisher)
+            val notificationService = createNotificationService(
+                ediAdapterClient,
+                failingMessageService,
+                statusPublisher
+            )
 
             shouldThrow<IllegalStateException> {
-                coroutineScope { service.processNotifications(this).join() }
+                coroutineScope { notificationService.processNotifications(this).join() }
             } shouldBe failure
 
-            publisher.published.single().status shouldBe MessageStatus.COMPLETED
-            states.getMessageSnapshotByExternalRefId(externalRefId) shouldBe initial
-            client.downloadedRequests shouldBe emptyList()
-            client.deleteRequests shouldBe emptyList()
+            statusPublisher.published.single().status shouldBe MessageStatus.COMPLETED
+            messageService.getMessageSnapshotByExternalRefId(externalRefId) shouldBe initial
+            ediAdapterClient.downloadedRequests shouldBe emptyList()
+            ediAdapterClient.deleteRequests shouldBe emptyList()
         }
 
         "outgoing notifications refresh the referenced message" {
@@ -237,35 +263,35 @@ class NotificationServiceSpec : StringSpec(
                 MESSAGE_APPREC_INFO_UPDATED,
                 MESSAGE_DELIVERY_STATE_UPDATED
             )) {
-                val (client, states, publisher, notificationService) = fixture()
+                val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
                 val externalRefId = Uuid.random()
                 val snapshot =
-                    states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-                client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
-                client.notifications = flowOf(notification(externalRefId, type).right())
+                    messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+                ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
+                ediAdapterClient.notifications = flowOf(notification(externalRefId, type).right())
 
                 notificationService.processNotifications(this).join()
 
-                client.notificationRequests shouldBe listOf(listOf(senderHerId))
-                client.statusRequests shouldBe listOf(externalRefId)
-                publisher.published.single().messageId shouldBe snapshot.messageState.id
-                publisher.published.single().status shouldBe MessageStatus.COMPLETED
+                ediAdapterClient.notificationRequests shouldBe listOf(listOf(senderHerId))
+                ediAdapterClient.statusRequests shouldBe listOf(externalRefId)
+                statusPublisher.published.single().messageId shouldBe snapshot.messageState.id
+                statusPublisher.published.single().status shouldBe MessageStatus.COMPLETED
             }
         }
 
         "duplicate notifications do not publish the same transition twice" {
-            val (client, states, publisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefId = Uuid.random()
-            states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
+            messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ACKNOWLEDGED, OK)
             val event = notification(externalRefId).right()
-            client.notifications = flowOf(event, event)
+            ediAdapterClient.notifications = flowOf(event, event)
 
             notificationService.processNotifications(this).join()
 
-            client.notificationRequests shouldBe listOf(listOf(senderHerId))
-            publisher.published.size shouldBe 1
-            client.statusRequests shouldBe listOf(externalRefId)
+            ediAdapterClient.notificationRequests shouldBe listOf(listOf(senderHerId))
+            statusPublisher.published.size shouldBe 1
+            ediAdapterClient.statusRequests shouldBe listOf(externalRefId)
         }
 
         "terminal message notifications are deleted without fetching or changing state" {
@@ -277,27 +303,27 @@ class NotificationServiceSpec : StringSpec(
                 ABANDONED to null
             )
             for ((transport, apprec) in terminalStatuses) {
-                val (client, states, publisher, service) = fixture()
+                val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
                 val externalRefId = Uuid.random()
-                states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-                states.recordStateChange(UpdateState(externalRefId, DIALOG, null, transport, null, apprec))
-                val before = states.getMessageSnapshotByExternalRefId(externalRefId)
+                messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+                messageService.recordStateChange(UpdateState(externalRefId, DIALOG, null, transport, null, apprec))
+                val before = messageService.getMessageSnapshotByExternalRefId(externalRefId)
                 val notifications = List(2) { notification(externalRefId).copy(createdAt = fromEpochSeconds(0)) }
-                client.givenStatus(externalRefId, UNCONFIRMED, null)
-                client.notifications = notifications.map { it.right() }.asFlow()
+                ediAdapterClient.givenStatus(externalRefId, UNCONFIRMED, null)
+                ediAdapterClient.notifications = notifications.map { it.right() }.asFlow()
 
-                service.processNotifications(this).join()
+                notificationService.processNotifications(this).join()
 
-                client.deleteRequests shouldBe notifications.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
-                client.statusRequests shouldBe emptyList()
-                publisher.published shouldBe emptyList()
-                states.getMessageSnapshotByExternalRefId(externalRefId) shouldBe before
+                ediAdapterClient.deleteRequests shouldBe notifications.map { DeleteNotificationsRequest(listOf(it.notificationId)) }
+                ediAdapterClient.statusRequests shouldBe emptyList()
+                statusPublisher.published shouldBe emptyList()
+                messageService.getMessageSnapshotByExternalRefId(externalRefId) shouldBe before
             }
         }
 
         "terminal stream failures cancel other processes in the application scope" {
-            val (client, _, _, service) = fixture()
-            client.notifications = flowOf(EdiAdapterError.Api(401).left())
+            val (ediAdapterClient, _, _, notificationService) = fixture()
+            ediAdapterClient.notifications = flowOf(EdiAdapterError.Api(401).left())
             val started = CompletableDeferred<Unit>()
             val stopped = CompletableDeferred<Unit>()
 
@@ -314,22 +340,22 @@ class NotificationServiceSpec : StringSpec(
                             }
                         }
                         started.await()
-                        service.processNotifications(scope)
+                        notificationService.processNotifications(scope)
                         awaitCancellation()
                     }
                 }
             }
 
             stopped.isCompleted shouldBe true
-            client.deleteRequests shouldBe emptyList()
-            client.statusRequests shouldBe emptyList()
+            ediAdapterClient.deleteRequests shouldBe emptyList()
+            ediAdapterClient.statusRequests shouldBe emptyList()
         }
 
         "cancelling consumption closes the notification flow" {
-            val (client, _, _, notificationService) = fixture()
+            val (ediAdapterClient, _, _, notificationService) = fixture()
             val started = CompletableDeferred<Unit>()
             val closed = CompletableDeferred<Unit>()
-            client.notifications = flow {
+            ediAdapterClient.notifications = flow {
                 try {
                     started.complete(Unit)
                     awaitCancellation()
@@ -344,18 +370,19 @@ class NotificationServiceSpec : StringSpec(
         }
 
         "empty notification stream does not publish" {
-            val (_, _, statusMessagePublisher, notificationService) = fixture()
+            val (_, _, statusPublisher, notificationService) = fixture()
 
             notificationService.processNotifications(this).join()
 
-            statusMessagePublisher.published shouldBe emptyList()
+            statusPublisher.published shouldBe emptyList()
         }
 
         "single dynamic receiver determines status and apprec errors in one request" {
-            val (client, states, publisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefId = Uuid.random()
-            val snapshot = states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatusList(
+            val snapshot =
+                messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatusList(
                 externalRefId,
                 listOf(
                     StatusInfo(
@@ -369,8 +396,8 @@ class NotificationServiceSpec : StringSpec(
                     )
                 )
             )
-            notificationService.processMessage(this, client, snapshot.messageState)
-            val event = publisher.published.single()
+            notificationService.processMessage(this, ediAdapterClient, snapshot.messageState)
+            val event = statusPublisher.published.single()
 
             event.status shouldBe MessageStatus.REJECTED_APPREC
             event.apprec!!.receiverHerId shouldBe 700
@@ -381,66 +408,72 @@ class NotificationServiceSpec : StringSpec(
             appRecErrorMessage.details shouldBe "Specific detail"
             appRecErrorMessage.description shouldBe "Description"
             appRecErrorMessage.oid shouldBe "oid"
-            client.statusRequests shouldBe listOf(externalRefId)
+            ediAdapterClient.statusRequests shouldBe listOf(externalRefId)
         }
 
         "missing or multiple receiver statuses leave state unchanged" {
             val status = StatusInfo(8142520, DeliveryState.ACKNOWLEDGED, true, ApprecInfo(OK))
-            for (statuses in listOf(null, emptyList(), listOf(status, status.copy(receiverHerId = 999)), listOf(status, status))) {
-                val (client, states, publisher, service) = fixture()
+            for (statuses in listOf(
+                null,
+                emptyList(),
+                listOf(status, status.copy(receiverHerId = 999)),
+                listOf(status, status)
+            )) {
+                val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
                 val ref = Uuid.random()
-                val initial = states.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
-                client.givenStatusList(ref, statuses)
+                val initial = messageService.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
+                ediAdapterClient.givenStatusList(ref, statuses)
 
                 shouldThrow<NotificationProcessingException> {
-                    coroutineScope { service.processMessage(this, client, initial.messageState) }
+                    coroutineScope { notificationService.processMessage(this, ediAdapterClient, initial.messageState) }
                 }
 
-                states.getMessageSnapshotByExternalRefId(ref) shouldBe initial
-                client.statusRequests shouldBe listOf(ref)
-                client.downloadedRequests shouldBe emptyList()
-                client.deleteRequests shouldBe emptyList()
-                publisher.published shouldBe emptyList()
+                messageService.getMessageSnapshotByExternalRefId(ref) shouldBe initial
+                ediAdapterClient.statusRequests shouldBe listOf(ref)
+                ediAdapterClient.downloadedRequests shouldBe emptyList()
+                ediAdapterClient.deleteRequests shouldBe emptyList()
+                statusPublisher.published shouldBe emptyList()
             }
         }
 
         "abandoned transport preserves the NHN outcome and publishes a distinct error code" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val externalRefId = Uuid.random()
-            val snapshot = states.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
-            client.givenStatus(externalRefId, DeliveryState.ABANDONED, null)
+            val snapshot =
+                messageService.createInitialState(CreateState(Uuid.random(), externalRefId, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatus(externalRefId, DeliveryState.ABANDONED, null)
 
-            service.processMessage(this, client, snapshot.messageState)
+            notificationService.processMessage(this, ediAdapterClient, snapshot.messageState)
 
-            val event = publisher.published.single()
+            val event = statusPublisher.published.single()
             event.status shouldBe MessageStatus.REJECTED_TRANSPORT
             event.error!!.code shouldBe "TRANSPORT_ABANDONED"
             event.error.details shouldBe "Transport abandoned after failed sending attempts for messageId: ${snapshot.messageState.id}"
             event.apprec shouldBe null
-            client.downloadedRequests shouldBe emptyList()
-            val stored = states.getMessageSnapshotByExternalRefId(externalRefId)!!
+            ediAdapterClient.downloadedRequests shouldBe emptyList()
+            val stored = messageService.getMessageSnapshotByExternalRefId(externalRefId)!!
             stored.messageState.externalDeliveryState shouldBe ABANDONED
             stored.messageStateChanges.last().newDeliveryState shouldBe ABANDONED
         }
 
         "partial apprec acceptance completes delivery" {
-            val (client, states, publisher, service) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
             val ref = Uuid.random()
-            val initial = states.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
-            client.givenStatus(ref, DeliveryState.ACKNOWLEDGED, ExternalAppRecStatus.OK_ERROR_IN_MESSAGE_PART)
+            val initial = messageService.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
+            ediAdapterClient.givenStatus(ref, DeliveryState.ACKNOWLEDGED, ExternalAppRecStatus.OK_ERROR_IN_MESSAGE_PART)
 
-            service.processMessage(this, client, initial.messageState)
+            notificationService.processMessage(this, ediAdapterClient, initial.messageState)
 
-            publisher.published.single().status shouldBe MessageStatus.COMPLETED
+            statusPublisher.published.single().status shouldBe MessageStatus.COMPLETED
         }
 
         "no state change → no publish" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            messageStateService.createInitialState(
+            messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -449,7 +482,7 @@ class NotificationServiceSpec : StringSpec(
             )
                 .shouldBeRight()
 
-            val updatedSnapshot = messageStateService.recordStateChange(
+            val updatedSnapshot = messageService.recordStateChange(
                 UpdateState(
                     externalRefId = externalRefId,
                     messageType = DIALOG,
@@ -465,19 +498,19 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, updatedSnapshot.messageState)
 
-            val current = messageStateService.getMessageSnapshotByExternalRefId(externalRefId)!!
+            val current = messageService.getMessageSnapshotByExternalRefId(externalRefId)!!
             current.messageState.externalDeliveryState shouldBe ACKNOWLEDGED
             current.messageState.appRecStatus shouldBe null
-            statusMessagePublisher.published shouldBe emptyList()
+            statusPublisher.published shouldBe emptyList()
         }
 
         "NEW → PENDING_TRANSPORT publishes status" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            val snapshot = messageStateService.createInitialState(
+            val snapshot = messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -490,9 +523,9 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, snapshot.messageState)
 
-            statusMessagePublisher.published.size shouldBe 1
+            statusPublisher.published.size shouldBe 1
 
-            val event = statusMessagePublisher.published.single()
+            val event = statusPublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe PENDING_TRANSPORT
             event.apprec shouldBe null
@@ -500,12 +533,12 @@ class NotificationServiceSpec : StringSpec(
         }
 
         "NEW → PENDING_APPREC publishes status" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            val snapshot = messageStateService.createInitialState(
+            val snapshot = messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -518,9 +551,9 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, snapshot.messageState)
 
-            statusMessagePublisher.published.size shouldBe 1
+            statusPublisher.published.size shouldBe 1
 
-            val event = statusMessagePublisher.published.single()
+            val event = statusPublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe PENDING_APPREC
             event.apprec shouldBe null
@@ -528,12 +561,12 @@ class NotificationServiceSpec : StringSpec(
         }
 
         "PENDING_APPREC → COMPLETED publishes completed status with apprec payload" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            messageStateService.createInitialState(
+            messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -542,7 +575,7 @@ class NotificationServiceSpec : StringSpec(
             )
                 .shouldBeRight()
 
-            val pendingSnapshot = messageStateService.recordStateChange(
+            val pendingSnapshot = messageService.recordStateChange(
                 UpdateState(
                     externalRefId = externalRefId,
                     messageType = DIALOG,
@@ -558,9 +591,9 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, pendingSnapshot.messageState)
 
-            statusMessagePublisher.published.size shouldBe 1
+            statusPublisher.published.size shouldBe 1
 
-            val event = statusMessagePublisher.published.single()
+            val event = statusPublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.COMPLETED
             event.error shouldBe null
@@ -572,12 +605,12 @@ class NotificationServiceSpec : StringSpec(
         }
 
         "external REJECTED publishes rejected transport status" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            val snapshot = messageStateService.createInitialState(
+            val snapshot = messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -590,9 +623,9 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, snapshot.messageState)
 
-            statusMessagePublisher.published.size shouldBe 1
+            statusPublisher.published.size shouldBe 1
 
-            val event = statusMessagePublisher.published.single()
+            val event = statusPublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.REJECTED_TRANSPORT
             event.apprec shouldBe null
@@ -601,12 +634,12 @@ class NotificationServiceSpec : StringSpec(
         }
 
         "apprec REJECTED publishes rejected apprec status with apprec payload" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            messageStateService.createInitialState(
+            messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -615,7 +648,7 @@ class NotificationServiceSpec : StringSpec(
             )
                 .shouldBeRight()
 
-            val pendingSnapshot = messageStateService.recordStateChange(
+            val pendingSnapshot = messageService.recordStateChange(
                 UpdateState(
                     externalRefId = externalRefId,
                     messageType = DIALOG,
@@ -631,9 +664,9 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, pendingSnapshot.messageState)
 
-            statusMessagePublisher.published.size shouldBe 1
+            statusPublisher.published.size shouldBe 1
 
-            val event = statusMessagePublisher.published.single()
+            val event = statusPublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.REJECTED_APPREC
             event.error shouldBe null
@@ -643,12 +676,12 @@ class NotificationServiceSpec : StringSpec(
         }
 
         "unresolvable external state → INVALID publishes invalid status" {
-            val (ediAdapterClient, messageStateService, statusMessagePublisher, notificationService) = fixture()
+            val (ediAdapterClient, messageService, statusPublisher, notificationService) = fixture()
 
             val id = Uuid.random()
             val externalRefId = Uuid.random()
 
-            val snapshot = messageStateService.createInitialState(
+            val snapshot = messageService.createInitialState(
                 CreateState(
                     id,
                     externalRefId,
@@ -661,9 +694,9 @@ class NotificationServiceSpec : StringSpec(
 
             notificationService.processMessage(this, ediAdapterClient, snapshot.messageState)
 
-            statusMessagePublisher.published.size shouldBe 1
+            statusPublisher.published.size shouldBe 1
 
-            val event = statusMessagePublisher.published.single()
+            val event = statusPublisher.published.single()
             event.messageId shouldBe id
             event.status shouldBe MessageStatus.INVALID
             event.apprec!!.status shouldBe ExternalAppRecStatus.REJECTED.name
@@ -675,36 +708,36 @@ class NotificationServiceSpec : StringSpec(
 
 private data class Fixture(
     val ediAdapterClient: FakeEdiAdapterClient,
-    val messageStateService: FakeTransactionalMessageStateService,
-    val statusMessagePublisher: FakeStatusMessagePublisher,
+    val messageService: FakeTransactionalMessageStateService,
+    val statusPublisher: FakeStatusMessagePublisher,
     val notificationService: NotificationService
 )
 
 private fun fixture(): Fixture {
     val ediAdapterClient = FakeEdiAdapterClient()
-    val messageStateService = FakeTransactionalMessageStateService()
-    val statusMessagePublisher = FakeStatusMessagePublisher()
+    val messageService = FakeTransactionalMessageStateService()
+    val statusPublisher = FakeStatusMessagePublisher()
 
     return Fixture(
         ediAdapterClient = ediAdapterClient,
-        messageStateService = messageStateService,
-        statusMessagePublisher = statusMessagePublisher,
-        notificationService = notificationService(
+        messageService = messageService,
+        statusPublisher = statusPublisher,
+        notificationService = createNotificationService(
             ediAdapterClient,
-            messageStateService,
-            statusMessagePublisher
+            messageService,
+            statusPublisher
         )
     )
 }
 
-private fun notificationService(
+private fun createNotificationService(
     ediAdapterClient: EdiAdapterClient,
-    messageStateService: MessageStateService,
+    messageService: MessageStateService,
     messagePublisher: MessagePublisher
 ): NotificationService = NotificationService(
     ediAdapterClient,
-    messageStateService,
-    MessageStatusService(messageStateService, stateEvaluatorService(), messagePublisher)
+    messageService,
+    MessageStatusService(messageService, stateEvaluatorService(), messagePublisher)
 )
 
 private fun stateEvaluatorService(): StateEvaluatorService = StateEvaluatorService(
@@ -727,9 +760,9 @@ private fun notification(
 
 private suspend fun NotificationService.processMessage(
     scope: CoroutineScope,
-    client: FakeEdiAdapterClient,
+    ediAdapterClient: FakeEdiAdapterClient,
     message: MessageState
 ) {
-    client.notifications = flowOf(notification(message.externalRefId).right())
+    ediAdapterClient.notifications = flowOf(notification(message.externalRefId).right())
     processNotifications(scope).join()
 }
