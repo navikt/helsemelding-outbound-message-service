@@ -37,18 +37,18 @@ class EdiStatusProcessorSpec : StringSpec({
         config().edi.statusMessageTopic,
         KafkaReceiver(kafka.toReceiverSettings(kafka, AutoOffsetReset.Latest))
     )
-    lateinit var transactionalMessageService: FakeTransactionalMessageStateService
+    lateinit var messageStateService: FakeTransactionalMessageStateService
     lateinit var statusMessagePublisher: FakeStatusMessagePublisher
 
     beforeEach {
-        transactionalMessageService = FakeTransactionalMessageStateService()
+        messageStateService = FakeTransactionalMessageStateService()
         statusMessagePublisher = FakeStatusMessagePublisher()
     }
 
     fun processor() = EdiStatusProcessor(
         receiver,
-        transactionalMessageService,
-        MessageStatusService(transactionalMessageService, testStateEvaluator(), statusMessagePublisher)
+        messageStateService,
+        MessageStatusService(messageStateService, testStateEvaluator(), statusMessagePublisher)
     )
 
     "both application outcomes publish and persist their final state once" {
@@ -58,7 +58,7 @@ class EdiStatusProcessorSpec : StringSpec({
             Triple(REJECTED, REJECTED_APPREC, AppRecStatus.REJECTED)
         )) {
             val id = Uuid.random()
-            transactionalMessageService.createInitialState(
+            messageStateService.createInitialState(
                 CreateState(
                     id,
                     id,
@@ -91,7 +91,7 @@ class EdiStatusProcessorSpec : StringSpec({
             publishedStatusEvent.apprec.receiverHerId shouldBe 700
             publishedStatusEvent.apprec.errorList shouldBe errors
             publishedStatusEvent.apprec.id shouldBe null
-            val messageStateSnapshot = transactionalMessageService.getMessageSnapshotById(id)!!
+            val messageStateSnapshot = messageStateService.getMessageSnapshotById(id)!!
             messageStateSnapshot.messageState.externalDeliveryState shouldBe ExternalDeliveryState.ACKNOWLEDGED
             messageStateSnapshot.messageState.appRecStatus shouldBe appRec
             messageStateSnapshot.messageStateChanges.size shouldBe 2
@@ -100,7 +100,7 @@ class EdiStatusProcessorSpec : StringSpec({
 
     "transport rejection remains final on duplicate or later application statuses" {
         val id = Uuid.random()
-        transactionalMessageService.createInitialState(CreateState(id, id, DIALOG, transport = EDI_1_0))
+        messageStateService.createInitialState(CreateState(id, id, DIALOG, transport = EDI_1_0))
             .shouldBeRight()
         val processor = processor()
 
@@ -113,7 +113,7 @@ class EdiStatusProcessorSpec : StringSpec({
         publishedStatusEvent.status shouldBe MessageStatus.REJECTED_TRANSPORT
         publishedStatusEvent.apprec shouldBe null
         publishedStatusEvent.error!!.code shouldBe "TRANSPORT_REJECTED"
-        val messageStateSnapshot = transactionalMessageService.getMessageSnapshotById(id)!!
+        val messageStateSnapshot = messageStateService.getMessageSnapshotById(id)!!
         messageStateSnapshot.messageState.externalDeliveryState shouldBe ExternalDeliveryState.REJECTED
         messageStateSnapshot.messageState.appRecStatus shouldBe null
         messageStateSnapshot.messageStateChanges.size shouldBe 2
@@ -124,7 +124,7 @@ class EdiStatusProcessorSpec : StringSpec({
     "unknown messages and statuses for EDI 2 messages return typed errors" {
         val unknown = Uuid.random()
         val edi2 = Uuid.random()
-        transactionalMessageService.createInitialState(CreateState(edi2, Uuid.random(), DIALOG)).shouldBeRight()
+        messageStateService.createInitialState(CreateState(edi2, Uuid.random(), DIALOG)).shouldBeRight()
         val processor = processor()
 
         processor.processStatus(
@@ -138,12 +138,12 @@ class EdiStatusProcessorSpec : StringSpec({
         ) shouldBe EdiStatusError.UnexpectedTransport(edi2, EDI_2_0).left()
 
         statusMessagePublisher.published shouldBe emptyList()
-        transactionalMessageService.getMessageSnapshotById(edi2)!!.messageState.appRecStatus shouldBe null
+        messageStateService.getMessageSnapshotById(edi2)!!.messageState.appRecStatus shouldBe null
     }
 
     "failed status publication leaves the stored state unchanged" {
         val id = Uuid.random()
-        val initial = transactionalMessageService.createInitialState(CreateState(id, id, DIALOG, transport = EDI_1_0))
+        val initial = messageStateService.createInitialState(CreateState(id, id, DIALOG, transport = EDI_1_0))
             .shouldBeRight()
         statusMessagePublisher.failNext = true
 
@@ -151,7 +151,7 @@ class EdiStatusProcessorSpec : StringSpec({
             processor().processStatus(id, EdiStatusEvent(ACKNOWLEDGED))
         }
 
-        transactionalMessageService.getMessageSnapshotById(id) shouldBe initial
+        messageStateService.getMessageSnapshotById(id) shouldBe initial
         statusMessagePublisher.published shouldBe emptyList()
     }
 })
