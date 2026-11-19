@@ -79,16 +79,20 @@ class MessageStateTransactionRepositorySpec : StringSpec({
     "ABANDONED is preserved in PostgreSQL current state and history" {
         resourceScope {
             val database = database(container.jdbcUrl)
-            val messages = ExposedMessageRepository(database)
-            val history = ExposedMessageStateHistoryRepository(database)
-            val transactions = ExposedMessageStateTransactionRepository(database, messages, history)
+            val messageRepository = ExposedMessageRepository(database)
+            val historyRepository = ExposedMessageStateHistoryRepository(database)
+            val transactionRepository = ExposedMessageStateTransactionRepository(
+                database,
+                messageRepository,
+                historyRepository
+            )
             val ref = Uuid.random()
-            transactions.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
+            transactionRepository.createInitialState(CreateState(Uuid.random(), ref, DIALOG)).shouldBeRight()
 
-            transactions.recordStateChange(UpdateState(ref, DIALOG, null, ABANDONED, null, null))
+            transactionRepository.recordStateChange(UpdateState(ref, DIALOG, null, ABANDONED, null, null))
 
-            messages.findByExternalReferenceId(ref)!!.externalDeliveryState shouldBe ABANDONED
-            history.findAll(ref).single { it.newDeliveryState != null }.newDeliveryState shouldBe ABANDONED
+            messageRepository.findByExternalReferenceId(ref)!!.externalDeliveryState shouldBe ABANDONED
+            historyRepository.findAll(ref).single { it.newDeliveryState != null }.newDeliveryState shouldBe ABANDONED
         }
     }
 
@@ -96,7 +100,7 @@ class MessageStateTransactionRepositorySpec : StringSpec({
         resourceScope {
             val database = database(container.jdbcUrl)
 
-            val messageStateTransactionRepository = ExposedMessageStateTransactionRepository(
+            val transactionRepository = ExposedMessageStateTransactionRepository(
                 database,
                 ExposedMessageRepository(database),
                 ExposedMessageStateHistoryRepository(database)
@@ -106,7 +110,7 @@ class MessageStateTransactionRepositorySpec : StringSpec({
             val externalRefId = Uuid.random()
             val now = Clock.System.now()
 
-            messageStateTransactionRepository.createInitialState(
+            transactionRepository.createInitialState(
                 CreateState(
                     id = id,
                     externalRefId = externalRefId,
@@ -115,7 +119,7 @@ class MessageStateTransactionRepositorySpec : StringSpec({
                 )
             )
 
-            val messageStateSnapshot = messageStateTransactionRepository.recordStateChange(
+            val messageStateSnapshot = transactionRepository.recordStateChange(
                 UpdateState(
                     externalRefId = externalRefId,
                     messageType = DIALOG,
@@ -145,18 +149,22 @@ class MessageStateTransactionRepositorySpec : StringSpec({
     "record state change – preserves edi publication metadata without extra history entries" {
         resourceScope {
             val database = database(container.jdbcUrl)
-            val messages = ExposedMessageRepository(database)
-            val history = ExposedMessageStateHistoryRepository(database)
-            val transactions = ExposedMessageStateTransactionRepository(database, messages, history)
+            val messageRepository = ExposedMessageRepository(database)
+            val historyRepository = ExposedMessageStateHistoryRepository(database)
+            val transactionRepository = ExposedMessageStateTransactionRepository(
+                database,
+                messageRepository,
+                historyRepository
+            )
             val id = Uuid.random()
-            transactions.createInitialState(
+            transactionRepository.createInitialState(
                 CreateState(id, id, DIALOG, transport = EDI_1_0, publishedAt = null)
             )
                 .shouldBeRight()
-            messages.findById(id)!!.publishedAt shouldBe null
-            messages.findById(id)!!.transport shouldBe EDI_1_0
+            messageRepository.findById(id)!!.publishedAt shouldBe null
+            messageRepository.findById(id)!!.transport shouldBe EDI_1_0
 
-            transactions.recordStateChange(
+            transactionRepository.recordStateChange(
                 UpdateState(
                     id,
                     DIALOG,
@@ -167,23 +175,23 @@ class MessageStateTransactionRepositorySpec : StringSpec({
                 )
             )
             val publishedAt = Clock.System.now()
-            messages.markPublished(id, publishedAt).shouldBeRight()
+            messageRepository.markPublished(id, publishedAt).shouldBeRight()
 
-            val stored = messages.findById(id)!!
+            val stored = messageRepository.findById(id)!!
             stored.publishedAt!! shouldBeInstant publishedAt
             stored.transport shouldBe EDI_1_0
             stored.externalRefId shouldBe id
             stored.appRecStatus shouldBe OK
-            history.findAll(id).size shouldBe 2
+            historyRepository.findAll(id).size shouldBe 2
         }
     }
 
     "marking publication for an unknown message returns MessageNotFound" {
         resourceScope {
-            val messages = ExposedMessageRepository(database(container.jdbcUrl))
+            val messageRepository = ExposedMessageRepository(database(container.jdbcUrl))
             val id = Uuid.random()
 
-            messages.markPublished(id, Clock.System.now()).shouldBeLeft(MessageNotFound(id))
+            messageRepository.markPublished(id, Clock.System.now()).shouldBeLeft(MessageNotFound(id))
         }
     }
 
