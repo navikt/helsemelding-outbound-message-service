@@ -52,7 +52,6 @@ spec:
     - access: read
       application: ebms-send-in
       team: team-emottak
-      cluster: dev-fss
     - access: read
       application: kafka-manager
       team: helsemelding
@@ -82,7 +81,6 @@ spec:
     - access: write
       application: ebms-send-in
       team: team-emottak
-      cluster: dev-fss
     - access: read
       application: kafka-manager
       team: helsemelding
