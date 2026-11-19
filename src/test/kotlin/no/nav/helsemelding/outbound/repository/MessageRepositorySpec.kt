@@ -4,16 +4,20 @@ import arrow.fx.coroutines.resourceScope
 import io.kotest.assertions.arrow.core.shouldBeLeft
 import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import no.nav.helsemelding.outbound.LifecycleError.ConflictingExternalReferenceId
 import no.nav.helsemelding.outbound.LifecycleError.ConflictingLifecycleId
+import no.nav.helsemelding.outbound.LifecycleError.MessageNotFound
+import no.nav.helsemelding.outbound.LifecycleError.UnexpectedPublicationTransport
 import no.nav.helsemelding.outbound.container
 import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.CreateStateResult
-import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.shouldBeInstant
 import no.nav.helsemelding.outbound.shouldBeRightOfType
@@ -239,7 +243,32 @@ class MessageRepositorySpec : StringSpec(
             }
         }
 
-        "countByExternalDeliveryState should return correct counts for each ExternalDeliveryState including null" {
+        "Mark published - unknown lifecycle ID returns MessageNotFound" {
+            resourceScope {
+                val messageRepository = ExposedMessageRepository(database(container.jdbcUrl))
+                val id = Uuid.random()
+
+                messageRepository.markPublished(id, Clock.System.now()).shouldBeLeft(MessageNotFound(id))
+            }
+        }
+
+        "Mark published - EDI 2.0 message returns UnexpectedPublicationTransport" {
+            resourceScope {
+                val database = database(container.jdbcUrl)
+                val messageRepository = ExposedMessageRepository(database)
+                val id = Uuid.random()
+                val now = Clock.System.now()
+
+                suspendTransaction(database) {
+                    messageRepository.createState(id, Uuid.random(), DIALOG, now, transport = EDI_2_0).shouldBeRight()
+                }
+
+                messageRepository.markPublished(id, now).shouldBeLeft(UnexpectedPublicationTransport(id, EDI_2_0))
+                messageRepository.findById(id).shouldNotBeNull().publishedAt.shouldBeNull()
+            }
+        }
+
+        "Count by external delivery state - includes null state" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
@@ -295,7 +324,7 @@ class MessageRepositorySpec : StringSpec(
             }
         }
 
-        "countByAppRecState should return correct counts for each AppRecStatus including null" {
+        "Count by AppRec status - includes null status" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
@@ -351,7 +380,7 @@ class MessageRepositorySpec : StringSpec(
             }
         }
 
-        "countByExternalDeliveryStateAndAppRecStatus should return correct counts for each ExternalDeliveryState-AppRecStatus combination" {
+        "Count by external delivery state and AppRec status - includes null values" {
             resourceScope {
                 val database = database(container.jdbcUrl)
 
@@ -386,14 +415,14 @@ class MessageRepositorySpec : StringSpec(
 
                     messageRepository.updateState(
                         externalRefId1,
-                        ExternalDeliveryState.ACKNOWLEDGED,
+                        ACKNOWLEDGED,
                         AppRecStatus.OK,
                         now
                     )
 
                     messageRepository.updateState(
                         externalRefId2,
-                        ExternalDeliveryState.ACKNOWLEDGED,
+                        ACKNOWLEDGED,
                         AppRecStatus.OK,
                         now
                     )
@@ -401,7 +430,7 @@ class MessageRepositorySpec : StringSpec(
                     val counts = messageRepository.countByExternalDeliveryStateAndAppRecStatus()
 
                     counts.size shouldBe 2
-                    counts[Pair(ExternalDeliveryState.ACKNOWLEDGED, AppRecStatus.OK)] shouldBe 2
+                    counts[Pair(ACKNOWLEDGED, AppRecStatus.OK)] shouldBe 2
                     counts[Pair(null, null)] shouldBe 1
                 }
             }

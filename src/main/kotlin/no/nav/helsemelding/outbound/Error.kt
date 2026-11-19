@@ -86,6 +86,8 @@ sealed interface LifecycleError : StateError {
         val messageId: Uuid
     ) : LifecycleError
 
+    data class UnexpectedPublicationTransport(val messageId: Uuid, val transport: MessageTransport) : LifecycleError
+
     data class MetadataExtractionFailure(val messageId: Uuid, val cause: ConversionError) : LifecycleError
 
     data class MissingExternalReferenceId(val messageId: Uuid) : LifecycleError

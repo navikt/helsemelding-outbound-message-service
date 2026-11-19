@@ -21,7 +21,7 @@ interface MessageStateService {
      *
      * EDI 2.0 messages are registered after the adapter assigns an external reference ID.
      * EDI 1.0 messages are registered before Kafka publication, with the lifecycle ID as their
-     * external reference and a null publishedAt until publication is confirmed.
+     * external reference. Only [markPublished] records a Kafka publication timestamp.
      *
      * The call enforces all lifecycle- and uniqueness constraints:
      * - If the lifecycle ID (`createState.id`) already exists with identical external data
@@ -105,10 +105,10 @@ interface MessageStateService {
      *
      * @param id The lifecycle ID of the registered message.
      * @param publishedAt The time at which Kafka publication was confirmed.
-     * @return `Right(Unit)` when publication is recorded, or `Left` with [MessageNotFound]
-     *         if no message is registered with the given ID.
+     * @return `Right(Unit)` when publication is recorded. Returns [MessageNotFound] for an unknown
+     *         lifecycle ID or [LifecycleError.UnexpectedPublicationTransport] for an EDI 2.0 message.
      */
-    suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit>
+    suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit>
 }
 
 class TransactionalMessageStateService(
@@ -116,7 +116,7 @@ class TransactionalMessageStateService(
     private val historyRepository: MessageStateHistoryRepository,
     private val transactionRepository: MessageStateTransactionRepository
 ) : MessageStateService {
-    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit> =
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> =
         messageRepository.markPublished(id, publishedAt)
 
     override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =
@@ -152,7 +152,7 @@ class FakeTransactionalMessageStateService : MessageStateService {
         messageStateById[id] = either
     }
 
-    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit> =
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> =
         messageRepository.markPublished(id, publishedAt)
 
     override suspend fun createInitialState(createState: CreateState): Either<LifecycleError, MessageStateSnapshot> =

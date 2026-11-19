@@ -121,7 +121,7 @@ class EdiLifecycleServiceSpec : StringSpec({
         val payload = adapterXml.toByteArray()
         transportRouter.route(listOf(adapterReceiverHerId)) shouldBe MessageTransport.EDI_2_0
         states.createInitialState(
-            CreateState(id, id, DIALOG, transport = MessageTransport.EDI_1_0, publishedAt = null)
+            CreateState(id, id, DIALOG, transport = MessageTransport.EDI_1_0)
         ).shouldBeRight()
 
         val snapshot = lifecycle.registerOutgoingMessage(id, payload).shouldBeRight()
@@ -145,7 +145,7 @@ class EdiLifecycleServiceSpec : StringSpec({
     "transport rejection prevents republication when publication was not marked" {
         val id = Uuid.random()
         states.createInitialState(
-            CreateState(id, id, DIALOG, transport = MessageTransport.EDI_1_0, publishedAt = null)
+            CreateState(id, id, DIALOG, transport = MessageTransport.EDI_1_0)
         ).shouldBeRight()
         val rejected = states.recordStateChange(
             UpdateState(id, DIALOG, null, ExternalDeliveryState.REJECTED, null, null)

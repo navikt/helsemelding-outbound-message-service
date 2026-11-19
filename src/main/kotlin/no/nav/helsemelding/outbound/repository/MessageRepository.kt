@@ -3,20 +3,24 @@ package no.nav.helsemelding.outbound.repository
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
+import arrow.core.raise.ensure
 import arrow.core.right
 import no.nav.helsemelding.outbound.LifecycleError
 import no.nav.helsemelding.outbound.LifecycleError.MessageNotFound
+import no.nav.helsemelding.outbound.LifecycleError.UnexpectedPublicationTransport
 import no.nav.helsemelding.outbound.model.AppRecStatus
 import no.nav.helsemelding.outbound.model.CreateStateResult
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageTransport
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_1_0
 import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.MessageType
 import no.nav.helsemelding.outbound.repository.Messages.appRecStatus
 import no.nav.helsemelding.outbound.repository.Messages.externalDeliveryState
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.datetime.CurrentTimestamp
@@ -62,8 +66,7 @@ interface MessageRepository {
         externalRefId: Uuid,
         messageType: MessageType,
         lastStateChange: Instant,
-        transport: MessageTransport = EDI_2_0,
-        publishedAt: Instant? = lastStateChange
+        transport: MessageTransport = EDI_2_0
     ): Either<LifecycleError, CreateStateResult>
 
     suspend fun updateState(
@@ -75,7 +78,7 @@ interface MessageRepository {
 
     suspend fun findByExternalReferenceId(externalRefId: Uuid): MessageState?
 
-    suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit>
+    suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit>
 
     suspend fun findById(id: Uuid): MessageState?
 
@@ -93,8 +96,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
         externalRefId: Uuid,
         messageType: MessageType,
         lastStateChange: Instant,
-        transport: MessageTransport,
-        publishedAt: Instant?
+        transport: MessageTransport
     ): Either<LifecycleError, CreateStateResult> = either {
         findById(id)?.let { existing ->
             return lifecycleId(
@@ -109,7 +111,6 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             insert[Messages.externalRefId] = externalRefId
             insert[Messages.messageType] = messageType
             insert[Messages.transport] = transport
-            insert[Messages.publishedAt] = publishedAt
             insert[Messages.externalDeliveryState] = null
             insert[Messages.appRecStatus] = null
             insert[Messages.lastStateChange] = lastStateChange
@@ -220,13 +221,22 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
             .left()
     }
 
-    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit> =
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> =
         suspendTransaction(database) {
-            val updatedRows = Messages.update(where = { Messages.id eq id }) { update ->
-                update[Messages.publishedAt] = publishedAt
-                update[Messages.updatedAt] = CurrentTimestamp
+            either {
+                val updatedRows = Messages.update(
+                    where = { (Messages.id eq id) and (Messages.transport eq EDI_1_0) }
+                ) { update ->
+                    update[Messages.publishedAt] = publishedAt
+                    update[Messages.updatedAt] = CurrentTimestamp
+                }
+                ensure(updatedRows > 0) {
+                    when (val message = findById(id)) {
+                        null -> MessageNotFound(id)
+                        else -> UnexpectedPublicationTransport(id, message.transport)
+                    }
+                }
             }
-            if (updatedRows == 0) MessageNotFound(id).left() else Unit.right()
         }
 
     override suspend fun findById(id: Uuid): MessageState? = suspendTransaction(database) {
@@ -263,8 +273,7 @@ class FakeMessageRepository : MessageRepository {
         externalRefId: Uuid,
         messageType: MessageType,
         lastStateChange: Instant,
-        transport: MessageTransport,
-        publishedAt: Instant?
+        transport: MessageTransport
     ): Either<LifecycleError, CreateStateResult> {
         val existingById = messagesById[id]
         if (existingById != null) {
@@ -295,8 +304,7 @@ class FakeMessageRepository : MessageRepository {
             lastStateChange = lastStateChange,
             createdAt = lastStateChange,
             updatedAt = lastStateChange,
-            transport = transport,
-            publishedAt = publishedAt
+            transport = transport
         )
 
         messagesById[id] = newMessage
@@ -329,8 +337,9 @@ class FakeMessageRepository : MessageRepository {
         return messagesById[messageId]
     }
 
-    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<MessageNotFound, Unit> {
+    override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> {
         val existing = messagesById[id] ?: return MessageNotFound(id).left()
+        if (!existing.transport.isEdi10()) return UnexpectedPublicationTransport(id, existing.transport).left()
         messagesById[id] = existing.copy(publishedAt = publishedAt, updatedAt = publishedAt)
         return Unit.right()
     }

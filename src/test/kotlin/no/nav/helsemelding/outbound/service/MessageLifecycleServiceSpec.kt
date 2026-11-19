@@ -88,6 +88,7 @@ class MessageLifecycleServiceSpec : StringSpec(
             val messageStateSnapshot = messageStateService.getMessageSnapshotById(messageId).shouldNotBeNull()
 
             registeredMessageSnapshot shouldBeEqualUsingFields messageStateSnapshot
+            messageStateSnapshot.messageState.publishedAt.shouldBeNull()
         }
 
         "sends extracted metadata and the original payload without application identity" {

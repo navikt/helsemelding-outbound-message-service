@@ -31,8 +31,7 @@ class ExposedMessageStateTransactionRepository(
                 externalRefId = createState.externalRefId,
                 messageType = createState.messageType,
                 lastStateChange = createState.occurredAt,
-                transport = createState.transport,
-                publishedAt = createState.publishedAt
+                transport = createState.transport
             )
                 .bind()
 
@@ -90,8 +89,7 @@ class FakeMessageStateTransactionRepository(
             externalRefId = createState.externalRefId,
             messageType = createState.messageType,
             lastStateChange = createState.occurredAt,
-            transport = createState.transport,
-            publishedAt = createState.publishedAt
+            transport = createState.transport
         )
             .bind()
 

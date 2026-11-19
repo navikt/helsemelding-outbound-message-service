@@ -15,7 +15,7 @@ data class MessageState(
     val createdAt: Instant,
     val updatedAt: Instant,
     val transport: MessageTransport = EDI_2_0,
-    val publishedAt: Instant? = createdAt
+    val publishedAt: Instant? = null
 )
 
 fun MessageState.formatUnchanged(): String = "${logPrefix()} No state transition (no persisted change)"

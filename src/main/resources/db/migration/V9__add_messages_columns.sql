@@ -4,6 +4,3 @@ ALTER TABLE messages
 
 ALTER TABLE messages ADD CONSTRAINT messages_transport_check
     CHECK (transport IN ('EDI_1.0', 'EDI_2.0'));
-
--- Existing messages were registered after successful publication to the adapter.
-UPDATE messages SET published_at = created_at;

@@ -36,8 +36,8 @@ interface MessageLifecycleService {
      * Routes and sends XML through the EDI adapter or Kafka, tracking it under [lifecycleId].
      * EDI 1.0 messages are registered before publication to allow immediate status responses.
      *
-     * Returns an existing published snapshot without sending again. An EDI 1.0 message whose
-     * publication was not confirmed may be republished with the same correlation id.
+     * Returns the existing snapshot for a registered EDI 2.0 message or a confirmed EDI 1.0 publication.
+     * An EDI 1.0 message whose publication was not confirmed may be republished with the same correlation ID.
      * Sending and persistence are not atomic: concurrent registrations or retries after
      * a successful send followed by failed persistence may send the message again.
      */
@@ -167,8 +167,7 @@ class MessageLifecycleOrchestratorService(
                 id = lifecycleId,
                 externalRefId = externalRefId,
                 messageType = DIALOG,
-                transport = transport,
-                publishedAt = if (transport.isEdi20()) Clock.System.now() else null
+                transport = transport
             )
         )
             .bind()
@@ -195,7 +194,7 @@ class MessageLifecycleOrchestratorService(
             is EdiFailure -> ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED
             is LifecycleError.EdiPublishFailure -> ErrorTypeTag.SENDING_TO_EDI_FAILED
             is LifecycleError.MissingExternalReferenceId -> ErrorTypeTag.EXTERNAL_REFERENCE_VALIDATION_FAILED
-            is LifecycleError.MessageNotFound -> ErrorTypeTag.STATE_LOOKUP_FAILED
+            is LifecycleError.MessageNotFound, is LifecycleError.UnexpectedPublicationTransport -> ErrorTypeTag.STATE_LOOKUP_FAILED
             is LifecycleError.Conflict, is LifecycleError.PersistenceFailure -> ErrorTypeTag.STATE_INITIALIZATION_FAILED
         }
         log.error { "messageId=$lifecycleId Failed registering message ($errorType): $error" }

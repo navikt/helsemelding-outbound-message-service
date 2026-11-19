@@ -1,19 +1,18 @@
 package no.nav.helsemelding.outbound.repository
 
 import arrow.fx.coroutines.resourceScope
-import io.kotest.assertions.arrow.core.shouldBeLeft
 import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
-import no.nav.helsemelding.outbound.LifecycleError.MessageNotFound
 import no.nav.helsemelding.outbound.container
 import no.nav.helsemelding.outbound.database
 import no.nav.helsemelding.outbound.model.AppRecStatus.OK
 import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ABANDONED
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState.ACKNOWLEDGED
-import no.nav.helsemelding.outbound.model.MessageTransport
 import no.nav.helsemelding.outbound.model.MessageTransport.EDI_1_0
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.model.UpdateState
 import no.nav.helsemelding.outbound.shouldBeInstant
@@ -58,8 +57,8 @@ class MessageStateTransactionRepositorySpec : StringSpec({
             messageState.id shouldBe id
             messageState.externalRefId shouldBe externalRefId
             messageState.messageType shouldBe DIALOG
-            messageState.transport shouldBe MessageTransport.EDI_2_0
-            messageState.publishedAt!! shouldBeInstant now
+            messageState.transport shouldBe EDI_2_0
+            messageState.publishedAt.shouldBeNull()
 
             messageState.externalDeliveryState shouldBe null
             messageState.appRecStatus shouldBe null
@@ -158,7 +157,7 @@ class MessageStateTransactionRepositorySpec : StringSpec({
             )
             val id = Uuid.random()
             transactionRepository.createInitialState(
-                CreateState(id, id, DIALOG, transport = EDI_1_0, publishedAt = null)
+                CreateState(id, id, DIALOG, transport = EDI_1_0)
             )
                 .shouldBeRight()
             messageRepository.findById(id)!!.publishedAt shouldBe null
@@ -183,15 +182,6 @@ class MessageStateTransactionRepositorySpec : StringSpec({
             storedMessage.externalRefId shouldBe id
             storedMessage.appRecStatus shouldBe OK
             historyRepository.findAll(id).size shouldBe 2
-        }
-    }
-
-    "marking publication for an unknown message returns MessageNotFound" {
-        resourceScope {
-            val messageRepository = ExposedMessageRepository(database(container.jdbcUrl))
-            val id = Uuid.random()
-
-            messageRepository.markPublished(id, Clock.System.now()).shouldBeLeft(MessageNotFound(id))
         }
     }
 
