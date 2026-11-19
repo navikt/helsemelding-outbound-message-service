@@ -60,9 +60,9 @@ class MessageLifecycleOrchestratorService(
         lifecycleId: Uuid,
         payload: ByteArray
     ): Either<LifecycleError, MessageStateSnapshot> = either {
-        when (val existing = messageStateService.getMessageSnapshotById(lifecycleId)) {
+        when (val messageStateSnapshot = messageStateService.getMessageSnapshotById(lifecycleId)) {
             null -> registerNewMessage(lifecycleId, payload)
-            else -> registerExistingMessage(existing, payload)
+            else -> registerExistingMessage(messageStateSnapshot, payload)
         }
     }
         .onLeft { reportFailure(lifecycleId, it) }
