@@ -29,7 +29,6 @@ import no.nav.helsemelding.outbound.receiver.MessageReceiver
 import no.nav.helsemelding.outbound.service.FakeTransactionalMessageStateService
 import no.nav.helsemelding.outbound.service.MessageLifecycleOrchestratorService
 import no.nav.helsemelding.outbound.service.MessageLifecycleService
-import no.nav.helsemelding.outbound.service.MessageTransportRouter
 import org.apache.kafka.clients.producer.RecordMetadata
 import org.apache.kafka.common.TopicPartition
 import kotlin.time.Clock
@@ -53,8 +52,7 @@ class MessageProcessorSpec : StringSpec({
             messageStateService = stateService,
             ediAdapterClient = adapter,
             ediPublisher = FakeEdiMessagePublisher(),
-            metrics = FakeMetrics(),
-            transportRouter = MessageTransportRouter()
+            metrics = FakeMetrics()
         )
         publisher = RecordingErrorMessagePublisher()
     }
@@ -83,6 +81,21 @@ class MessageProcessorSpec : StringSpec({
         error.errors.single().code shouldBe ErrorCode.METADATA_EXTRACTION_ERROR
         error.errors.single().message shouldBe "Unable to extract message metadata"
         Json.encodeToString(error).contains("<invalid") shouldBe false
+        adapter.sentMessages shouldBe emptyList()
+        stateService.getMessageSnapshotById(messageId).shouldBeNull()
+    }
+
+    "should publish an error for an unknown EDI version" {
+        val messageId = Uuid.random()
+        val message = DialogMessage(messageId, validXml.encodeToByteArray(), "test-system", ediVersion = "EDI_3.0")
+
+        processor().processMessage(message).shouldBeRight()
+
+        val error = publisher.published.single()
+        error.messageId shouldBe messageId
+        error.sourceSystem shouldBe "test-system"
+        error.errors.single().code shouldBe ErrorCode.INVALID_KAFKA_VALUE
+        error.errors.single().message shouldBe "Invalid ediVersion header. Expected EDI_1.0 or EDI_2.0."
         adapter.sentMessages shouldBe emptyList()
         stateService.getMessageSnapshotById(messageId).shouldBeNull()
     }
@@ -166,7 +179,8 @@ private fun unhandledLifecycleErrors(id: Uuid): List<LifecycleError> = listOf(
 private fun failingLifecycle(error: LifecycleError): MessageLifecycleService = object : MessageLifecycleService {
     override suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
-        payload: ByteArray
+        payload: ByteArray,
+        ediVersion: String?
     ): Either<LifecycleError, MessageStateSnapshot> = error.left()
 }
 

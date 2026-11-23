@@ -20,6 +20,8 @@ import no.nav.helsemelding.outbound.model.CreateState
 import no.nav.helsemelding.outbound.model.MessageState
 import no.nav.helsemelding.outbound.model.MessageStateSnapshot
 import no.nav.helsemelding.outbound.model.MessageTransport
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_1_0
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.publisher.EdiMessagePublisher
 import kotlin.io.encoding.Base64
@@ -35,6 +37,7 @@ interface MessageLifecycleService {
     /**
      * Routes and sends XML through the EDI adapter or Kafka, tracking it under [lifecycleId].
      * EDI 1.0 messages are registered before publication to allow immediate status responses.
+     * Messages without [ediVersion] use EDI 2.0.
      *
      * Returns the existing snapshot for a registered EDI 2.0 message or a confirmed EDI 1.0 publication.
      * An EDI 1.0 message whose publication was not confirmed may be republished with the same correlation ID.
@@ -43,7 +46,8 @@ interface MessageLifecycleService {
      */
     suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
-        payload: ByteArray
+        payload: ByteArray,
+        ediVersion: String? = null
     ): Either<LifecycleError, MessageStateSnapshot>
 }
 
@@ -51,17 +55,17 @@ class MessageLifecycleOrchestratorService(
     private val messageStateService: MessageStateService,
     private val ediAdapterClient: EdiAdapterClient,
     private val ediPublisher: EdiMessagePublisher,
-    private val transportRouter: MessageTransportRouter,
     private val metrics: Metrics,
     private val metadataExtractor: MetadataExtractor = MsgHeadMessageConverter()
 ) : MessageLifecycleService {
 
     override suspend fun registerOutgoingMessage(
         lifecycleId: Uuid,
-        payload: ByteArray
+        payload: ByteArray,
+        ediVersion: String?
     ): Either<LifecycleError, MessageStateSnapshot> = either {
         when (val messageStateSnapshot = messageStateService.getMessageSnapshotById(lifecycleId)) {
-            null -> registerNewMessage(lifecycleId, payload)
+            null -> registerNewMessage(lifecycleId, payload, ediVersion)
             else -> registerExistingMessage(messageStateSnapshot, payload)
         }
     }
@@ -80,12 +84,16 @@ class MessageLifecycleOrchestratorService(
 
     private suspend fun Raise<LifecycleError>.registerNewMessage(
         lifecycleId: Uuid,
-        payload: ByteArray
+        payload: ByteArray,
+        ediVersion: String?
     ): MessageStateSnapshot {
+        val transport = ensureNotNull(MessageTransport.fromEdiVersion(ediVersion)) {
+            LifecycleError.InvalidEdiVersion(lifecycleId)
+        }
         val metadata = extractMetadata(lifecycleId, payload)
-        return when (transportRouter.route(metadata.receiverHerIds)) {
-            MessageTransport.EDI_1_0 -> registerEdiMessage(lifecycleId, payload)
-            MessageTransport.EDI_2_0 -> registerEdiAdapterMessage(lifecycleId, metadata, payload)
+        return when (transport) {
+            EDI_1_0 -> registerEdiMessage(lifecycleId, payload)
+            EDI_2_0 -> registerEdiAdapterMessage(lifecycleId, metadata, payload)
         }
     }
 
@@ -93,7 +101,7 @@ class MessageLifecycleOrchestratorService(
         lifecycleId: Uuid,
         payload: ByteArray
     ): MessageStateSnapshot {
-        initializeState(lifecycleId, lifecycleId, MessageTransport.EDI_1_0)
+        initializeState(lifecycleId, lifecycleId, EDI_1_0)
         return publishToEdi(lifecycleId, payload)
     }
 
@@ -103,7 +111,7 @@ class MessageLifecycleOrchestratorService(
         payload: ByteArray
     ): MessageStateSnapshot {
         val externalRefId = sendMessage(lifecycleId, metadata.toRequest(payload))
-        return initializeState(lifecycleId, externalRefId, MessageTransport.EDI_2_0)
+        return initializeState(lifecycleId, externalRefId, EDI_2_0)
     }
 
     private suspend fun Raise<LifecycleError>.publishToEdi(
@@ -174,7 +182,7 @@ class MessageLifecycleOrchestratorService(
             .also { logStateInitialized(lifecycleId, externalRefId) }
 
     private fun MessageState.needsEdiPublication(): Boolean =
-        transport.isEdi10() && publishedAt == null && externalDeliveryState == null && appRecStatus == null
+        transport == EDI_1_0 && publishedAt == null && externalDeliveryState == null && appRecStatus == null
 
     private fun logExistingState(lifecycleId: Uuid) {
         log.debug { "messageId=$lifecycleId Returning existing lifecycle state" }
@@ -190,6 +198,7 @@ class MessageLifecycleOrchestratorService(
 
     private fun reportFailure(lifecycleId: Uuid, error: LifecycleError) {
         val errorType = when (error) {
+            is LifecycleError.InvalidEdiVersion -> ErrorTypeTag.INVALID_EDI_VERSION
             is LifecycleError.MetadataExtractionFailure -> ErrorTypeTag.METADATA_EXTRACTION_FAILED
             is EdiFailure -> ErrorTypeTag.SENDING_TO_EDI_ADAPTER_FAILED
             is LifecycleError.EdiPublishFailure -> ErrorTypeTag.SENDING_TO_EDI_FAILED

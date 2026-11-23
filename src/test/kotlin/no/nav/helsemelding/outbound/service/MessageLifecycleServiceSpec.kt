@@ -21,6 +21,7 @@ import no.nav.helsemelding.outbound.metrics.ErrorTypeTag
 import no.nav.helsemelding.outbound.metrics.FakeMetrics
 import no.nav.helsemelding.outbound.metrics.Metrics
 import no.nav.helsemelding.outbound.model.CreateState
+import no.nav.helsemelding.outbound.model.MessageTransport
 import no.nav.helsemelding.outbound.model.MessageType.DIALOG
 import no.nav.helsemelding.outbound.shouldBeLeftOfType
 import kotlin.uuid.Uuid
@@ -44,8 +45,7 @@ class MessageLifecycleServiceSpec : StringSpec(
                     override fun registerOutgoingMessageFailed(errorType: ErrorTypeTag) {
                         reportedErrors.add(errorType)
                     }
-                },
-                transportRouter = MessageTransportRouter()
+                }
             )
         }
 
@@ -91,12 +91,13 @@ class MessageLifecycleServiceSpec : StringSpec(
             messageStateSnapshot.messageState.publishedAt.shouldBeNull()
         }
 
-        "sends extracted metadata and the original payload without application identity" {
+        "defaults to EDI 2.0 without a header and sends the original payload and metadata" {
             val payload = messageXml.toByteArray()
             ediAdapterClient.givenPostMessage(Right(PostMessageResponse(Uuid.random())))
-            messageLifecycleService.registerOutgoingMessage(Uuid.random(), payload).shouldBeRight()
+            val snapshot = messageLifecycleService.registerOutgoingMessage(Uuid.random(), payload).shouldBeRight()
             val request = ediAdapterClient.sentMessages.single()
 
+            snapshot.messageState.transport shouldBe MessageTransport.EDI_2_0
             request.senderHerId shouldBe 600
             request.receiverHerIds shouldBe listOf(700)
             request.messageTypeIdentificator shouldBe "DIALOG_FORESPORSEL"

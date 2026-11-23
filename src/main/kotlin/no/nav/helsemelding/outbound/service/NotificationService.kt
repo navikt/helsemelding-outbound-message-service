@@ -22,6 +22,7 @@ import no.nav.helsemelding.outbound.config
 import no.nav.helsemelding.outbound.model.AppRecPayload
 import no.nav.helsemelding.outbound.model.ExternalStatus
 import no.nav.helsemelding.outbound.model.MessageState
+import no.nav.helsemelding.outbound.model.MessageTransport.EDI_2_0
 import no.nav.helsemelding.outbound.model.formatExternal
 import no.nav.helsemelding.outbound.model.logPrefix
 import no.nav.helsemelding.outbound.util.translate
@@ -57,7 +58,7 @@ class NotificationService(
             else -> {
                 notification.relatedMessageId
                     ?.let { messageStateService.getMessageSnapshotByExternalRefId(it) }
-                    ?.takeIf { it.messageState.transport.isEdi20() }
+                    ?.takeIf { it.messageState.transport == EDI_2_0 }
                     ?.takeUnless { messageStatusService.isTerminal(it.messageState) }
                     ?.run {
                         tracer.withSpan("Refresh message status") {

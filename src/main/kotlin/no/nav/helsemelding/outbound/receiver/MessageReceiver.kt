@@ -25,7 +25,8 @@ class MessageReceiver(
                     message = DialogMessage(
                         id = Uuid.parse(record.key()),
                         payload = record.value(),
-                        sourceSystem = sourceSystem
+                        sourceSystem = sourceSystem,
+                        ediVersion = record.headers().lastHeader("ediVersion")?.value()?.decodeToString()
                     ),
                     acknowledge = { record.offset.acknowledge() }
                 )

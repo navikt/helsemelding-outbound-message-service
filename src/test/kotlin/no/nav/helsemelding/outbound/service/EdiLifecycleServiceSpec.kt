@@ -1,11 +1,13 @@
 package no.nav.helsemelding.outbound.service
 
 import arrow.core.left
+import arrow.core.right
 import io.kotest.assertions.arrow.core.shouldBeRight
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import no.nav.helsemelding.ediadapter.model.v3.PostMessageResponse
 import no.nav.helsemelding.outbound.FakeEdiAdapterClient
 import no.nav.helsemelding.outbound.FakeEdiMessagePublisher
 import no.nav.helsemelding.outbound.LifecycleError
@@ -30,11 +32,8 @@ import kotlin.uuid.Uuid
 
 class EdiLifecycleServiceSpec : StringSpec({
     val edi = config().edi
-    val ediReceiverHerId = 701
-    val transportRouter = MessageTransportRouter(listOf(ediReceiverHerId))
-    val adapterReceiverHerId = 700
-    val xml = messageXml(ediReceiverHerId)
-    val adapterXml = messageXml(adapterReceiverHerId)
+    val receiverHerId = 701
+    val xml = messageXml(receiverHerId)
     lateinit var states: FakeTransactionalMessageStateService
     lateinit var adapter: FakeEdiAdapterClient
     lateinit var publisher: FakeEdiMessagePublisher
@@ -44,7 +43,6 @@ class EdiLifecycleServiceSpec : StringSpec({
         messageStateService = states,
         ediAdapterClient = adapter,
         metrics = FakeMetrics(),
-        transportRouter = transportRouter,
         ediPublisher = publisher
     )
 
@@ -55,10 +53,10 @@ class EdiLifecycleServiceSpec : StringSpec({
         lifecycle = createLifecycleService()
     }
 
-    "configured receivers use edi with the lifecycle id and original XML" {
+    "EDI 1.0 header routes to Kafka with the lifecycle id and original XML" {
         val id = Uuid.random()
         val payload = xml.toByteArray()
-        val snapshot = lifecycle.registerOutgoingMessage(id, payload).shouldBeRight()
+        val snapshot = lifecycle.registerOutgoingMessage(id, payload, ediVersion = "EDI_1.0").shouldBeRight()
 
         snapshot.messageState.transport shouldBe MessageTransport.EDI_1_0
         snapshot.messageState.externalRefId shouldBe id
@@ -69,6 +67,20 @@ class EdiLifecycleServiceSpec : StringSpec({
         publisher.published.single().first shouldBe id
         publisher.published.single().second.toList() shouldBe payload.toList()
         adapter.sentMessages shouldBe emptyList()
+    }
+
+    "EDI 2.0 header routes to the adapter" {
+        val id = Uuid.random()
+        val externalRefId = Uuid.random()
+        val payload = xml.toByteArray()
+        adapter.givenPostMessage(PostMessageResponse(externalRefId).right())
+
+        val snapshot = lifecycle.registerOutgoingMessage(id, payload, ediVersion = "EDI_2.0").shouldBeRight()
+
+        snapshot.messageState.transport shouldBe MessageTransport.EDI_2_0
+        snapshot.messageState.externalRefId shouldBe externalRefId
+        adapter.sentMessages.single().receiverHerIds shouldBe listOf(receiverHerId)
+        publisher.published shouldBe emptyList()
     }
 
     "state exists before publication and an immediate final status survives publication marking" {
@@ -86,7 +98,7 @@ class EdiLifecycleServiceSpec : StringSpec({
             )
         }
 
-        val snapshot = lifecycle.registerOutgoingMessage(id, xml.toByteArray()).shouldBeRight()
+        val snapshot = lifecycle.registerOutgoingMessage(id, xml.toByteArray(), ediVersion = "EDI_1.0").shouldBeRight()
 
         snapshot.messageState.externalDeliveryState shouldBe ExternalDeliveryState.ACKNOWLEDGED
         snapshot.messageState.appRecStatus shouldBe AppRecStatus.OK
@@ -99,9 +111,10 @@ class EdiLifecycleServiceSpec : StringSpec({
         val id = Uuid.random()
         val failure = PublishError.Failure(id, edi.dialogMessageOutTopic, IllegalStateException("broker unavailable"))
         publisher.result = failure.left()
-        lifecycle.registerOutgoingMessage(id, xml.toByteArray()).shouldBeLeftOfType<LifecycleError.EdiPublishFailure> {
-            it.cause shouldBe failure
-        }
+        lifecycle.registerOutgoingMessage(id, xml.toByteArray(), ediVersion = "EDI_1.0")
+            .shouldBeLeftOfType<LifecycleError.EdiPublishFailure> {
+                it.cause shouldBe failure
+            }
         states.getMessageSnapshotById(id)!!.messageState.publishedAt.shouldBeNull()
 
         publisher.result = FakeEdiMessagePublisher().result
@@ -116,15 +129,14 @@ class EdiLifecycleServiceSpec : StringSpec({
         adapter.sentMessages shouldBe emptyList()
     }
 
-    "registered edi messages keep their stored transport when the receiver now routes through the adapter" {
+    "registered edi messages keep their stored transport when redelivery indicates EDI 2.0" {
         val id = Uuid.random()
-        val payload = adapterXml.toByteArray()
-        transportRouter.route(listOf(adapterReceiverHerId)) shouldBe MessageTransport.EDI_2_0
+        val payload = xml.toByteArray()
         states.createInitialState(
             CreateState(id, id, DIALOG, transport = MessageTransport.EDI_1_0)
         ).shouldBeRight()
 
-        val snapshot = lifecycle.registerOutgoingMessage(id, payload).shouldBeRight()
+        val snapshot = lifecycle.registerOutgoingMessage(id, payload, ediVersion = "EDI_2.0").shouldBeRight()
 
         snapshot.messageState.transport shouldBe MessageTransport.EDI_1_0
         snapshot.messageState.externalRefId shouldBe id
@@ -137,7 +149,7 @@ class EdiLifecycleServiceSpec : StringSpec({
 
     "published messages are not published again on redelivery" {
         val id = Uuid.random()
-        val first = lifecycle.registerOutgoingMessage(id, xml.toByteArray()).shouldBeRight()
+        val first = lifecycle.registerOutgoingMessage(id, xml.toByteArray(), ediVersion = "EDI_1.0").shouldBeRight()
         lifecycle.registerOutgoingMessage(id, "not XML".toByteArray()).shouldBeRight() shouldBe first
         publisher.published.size shouldBe 1
     }
@@ -162,7 +174,8 @@ class EdiLifecycleServiceSpec : StringSpec({
     "failed registration does not publish XML" {
         val id = Uuid.random()
         states.givenInitialState(id, LifecycleError.PersistenceFailure(id, "database unavailable").left())
-        lifecycle.registerOutgoingMessage(id, xml.toByteArray()).shouldBeLeftOfType<LifecycleError.PersistenceFailure>()
+        lifecycle.registerOutgoingMessage(id, xml.toByteArray(), ediVersion = "EDI_1.0")
+            .shouldBeLeftOfType<LifecycleError.PersistenceFailure>()
         publisher.published shouldBe emptyList()
         adapter.sentMessages shouldBe emptyList()
     }

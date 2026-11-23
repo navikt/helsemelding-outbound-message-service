@@ -60,7 +60,11 @@ class MessageProcessor(
     internal suspend fun processMessage(dialogMessage: DialogMessage): Either<MessageProcessingError, Unit> =
         tracer.withSpan("Process and send message") {
             either {
-                val registration = messageLifecycleService.registerOutgoingMessage(dialogMessage.id, dialogMessage.payload)
+                val registration = messageLifecycleService.registerOutgoingMessage(
+                    dialogMessage.id,
+                    dialogMessage.payload,
+                    dialogMessage.ediVersion
+                )
                 when (registration) {
                     is Left -> handleRegistrationFailure(dialogMessage, registration.value)
                     is Right -> {
@@ -79,6 +83,11 @@ class MessageProcessor(
     ) {
         log.error { "Registering message failed: messageId=${dialogMessage.id}, error=$error" }
         when (error) {
+            is LifecycleError.InvalidEdiVersion -> publishError(
+                dialogMessage,
+                ErrorCode.INVALID_KAFKA_VALUE,
+                "Invalid ediVersion header. Expected EDI_1.0 or EDI_2.0."
+            )
             is LifecycleError.MetadataExtractionFailure -> publishError(
                 dialogMessage,
                 ErrorCode.METADATA_EXTRACTION_ERROR,
