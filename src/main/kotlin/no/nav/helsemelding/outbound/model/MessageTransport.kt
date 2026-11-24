@@ -9,8 +9,12 @@ enum class MessageTransport(val value: String) {
     fun isEdi20(): Boolean = this == EDI_2_0
 
     companion object {
-        fun fromValue(value: String): MessageTransport =
-            entries.firstOrNull { it.value == value }
-                ?: error("Unknown message transport: $value")
+        fun fromEdiVersion(ediVersion: String?): MessageTransport? {
+            val version = ediVersion ?: return EDI_2_0
+            return entries.firstOrNull { it.value == version }
+        }
+
+        internal fun fromValue(value: String): MessageTransport =
+            fromEdiVersion(value) ?: error("Unknown message transport: $value")
     }
 }

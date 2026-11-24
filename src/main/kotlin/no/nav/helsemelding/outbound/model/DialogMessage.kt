@@ -7,5 +7,6 @@ import kotlin.uuid.Uuid
 data class DialogMessage(
     val id: Uuid, // TODO: Might be OriginalMsgId
     val payload: ByteArray,
-    val sourceSystem: String
+    val sourceSystem: String,
+    val ediVersion: String? = null
 )

@@ -117,8 +117,7 @@ data class EdiAdapter(
 
 data class Edi(
     val dialogMessageOutTopic: String,
-    val statusMessageTopic: String,
-    val receiverHerIds: List<Int> = emptyList()
+    val statusMessageTopic: String
 )
 
 data class Metrics(

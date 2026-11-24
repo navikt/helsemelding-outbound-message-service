@@ -21,6 +21,7 @@ class MessageReceiverSpec : KafkaSpec({
             val payload = "<MsgHead>test</MsgHead>".toByteArray()
             val record = ProducerRecord(topic, id.toString(), payload).apply {
                 headers().add("sourceSystem", "test-system".toByteArray())
+                headers().add("ediVersion", "EDI_1.0".toByteArray())
             }
             publisher.publishScope { publish(record) }
             val kafka = kafkaReceiver()
@@ -30,6 +31,7 @@ class MessageReceiverSpec : KafkaSpec({
                 received.message.id shouldBe id
                 received.message.payload shouldBe payload
                 received.message.sourceSystem shouldBe "test-system"
+                received.message.ediVersion shouldBe "EDI_1.0"
             }
         }
     }
@@ -40,7 +42,23 @@ class MessageReceiverSpec : KafkaSpec({
             publisher.publishScope { publish(ProducerRecord(topic, Uuid.random().toString(), "data".toByteArray())) }
 
             MessageReceiver(topic, kafkaReceiver()).receiveMessages().test(timeout = kafkaTimeout) {
-                awaitItem().message.sourceSystem shouldBe "UNKNOWN"
+                val message = awaitItem().message
+                message.sourceSystem shouldBe "UNKNOWN"
+                message.ediVersion shouldBe null
+            }
+        }
+    }
+
+    "leaves ediVersion unset when the header has no value" {
+        resourceScope {
+            val publisher = kafkaPublisher()
+            val record = ProducerRecord(topic, Uuid.random().toString(), "data".toByteArray()).apply {
+                headers().add("ediVersion", null)
+            }
+            publisher.publishScope { publish(record) }
+
+            MessageReceiver(topic, kafkaReceiver()).receiveMessages().test(timeout = kafkaTimeout) {
+                awaitItem().message.ediVersion shouldBe null
             }
         }
     }

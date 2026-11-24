@@ -78,7 +78,3 @@ spec:
         - application: azure-token-generator
           namespace: aura
           cluster: dev-gcp
-  # Enable when the EDI 1.0 recipient list is known; omit for an empty list.
-  # env:
-  #   - name: EDI_RECEIVER_HER_IDS
-  #     value: "<comma-separated HER IDs>"

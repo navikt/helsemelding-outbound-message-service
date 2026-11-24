@@ -39,7 +39,6 @@ import no.nav.helsemelding.outbound.repository.ExposedMessageStateTransactionRep
 import no.nav.helsemelding.outbound.service.MessageLifecycleOrchestratorService
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.MessageStatusService
-import no.nav.helsemelding.outbound.service.MessageTransportRouter
 import no.nav.helsemelding.outbound.service.MetricsService
 import no.nav.helsemelding.outbound.service.NotificationService
 import no.nav.helsemelding.outbound.service.PrometheusMetricsService
@@ -75,7 +74,6 @@ fun main() = SuspendApp {
                 messageStateService = states,
                 ediAdapterClient = deps.ediAdapterClient,
                 metrics = metrics,
-                transportRouter = MessageTransportRouter(),
                 ediPublisher = ediPublisher
             )
 
