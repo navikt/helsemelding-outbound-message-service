@@ -17,7 +17,6 @@ import no.nav.helsemelding.outbound.model.EdiStatus
 import no.nav.helsemelding.outbound.model.EdiStatusEvent
 import no.nav.helsemelding.outbound.model.ExternalDeliveryState
 import no.nav.helsemelding.outbound.model.ExternalStatus
-import no.nav.helsemelding.outbound.model.MessageTransport.EDI_1_0
 import no.nav.helsemelding.outbound.receiver.EdiMessageReceiver
 import no.nav.helsemelding.outbound.service.MessageStateService
 import no.nav.helsemelding.outbound.service.MessageStatusService
@@ -43,7 +42,7 @@ class EdiStatusProcessor(
         val message = ensureNotNull(messageStateService.getMessageSnapshotById(messageId)) {
             EdiStatusError.MessageNotFound(messageId)
         }.messageState
-        ensure(message.transport == EDI_1_0) {
+        ensure(message.transport.isEdi10()) {
             EdiStatusError.UnexpectedTransport(messageId, message.transport)
         }
         messageStatusService.processStatus(message, status.toExternalStatus())

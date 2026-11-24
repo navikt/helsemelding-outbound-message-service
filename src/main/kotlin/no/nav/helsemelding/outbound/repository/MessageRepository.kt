@@ -234,7 +234,7 @@ class ExposedMessageRepository(private val database: Database) : MessageReposito
                 }
                 if (updatedRows == 0) {
                     val message = ensureNotNull(findById(id)) { MessageNotFound(id) }
-                    ensure(message.transport == EDI_1_0) {
+                    ensure(message.transport.isEdi10()) {
                         UnexpectedPublicationTransport(id, message.transport)
                     }
                 }
@@ -341,7 +341,7 @@ class FakeMessageRepository : MessageRepository {
 
     override suspend fun markPublished(id: Uuid, publishedAt: Instant): Either<LifecycleError, Unit> {
         val existing = messagesById[id] ?: return MessageNotFound(id).left()
-        if (existing.transport != EDI_1_0) return UnexpectedPublicationTransport(id, existing.transport).left()
+        if (!existing.transport.isEdi10()) return UnexpectedPublicationTransport(id, existing.transport).left()
         if (existing.publishedAt == null) {
             messagesById[id] = existing.copy(publishedAt = publishedAt, updatedAt = publishedAt)
         }

@@ -182,7 +182,7 @@ class MessageLifecycleOrchestratorService(
             .also { logStateInitialized(lifecycleId, externalRefId) }
 
     private fun MessageState.needsEdiPublication(): Boolean =
-        transport == EDI_1_0 && publishedAt == null && externalDeliveryState == null && appRecStatus == null
+        transport.isEdi10() && publishedAt == null && externalDeliveryState == null && appRecStatus == null
 
     private fun logExistingState(lifecycleId: Uuid) {
         log.debug { "messageId=$lifecycleId Returning existing lifecycle state" }
